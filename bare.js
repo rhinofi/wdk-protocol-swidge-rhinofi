@@ -1,4 +1,4 @@
-// Copyright 2026 matko95 &lt;mtrifunovski@gmail.com&gt;
+// Copyright 2026 Rhino.fi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.

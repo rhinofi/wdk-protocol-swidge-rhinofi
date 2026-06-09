@@ -1,4 +1,4 @@
-export { default } from "./src/rhinofi-protocol.js";
+export { ISwidgeProtocol } from "@tetherto/wdk-wallet/protocols";
 export type SwapOptions = import("@tetherto/wdk-wallet/protocols").SwapOptions;
 export type SwapResult = import("@tetherto/wdk-wallet/protocols").SwapResult;
 export type BridgeOptions = import("@tetherto/wdk-wallet/protocols").BridgeOptions;
@@ -20,3 +20,4 @@ export type SwidgeSupportedChain = import("@tetherto/wdk-wallet/protocols").Swid
 export type SwidgeSupportedToken = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedToken;
 export type SwidgeSupportedTokensOptions = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedTokensOptions;
 export type RhinofiProtocolConfig = import("./src/rhinofi-protocol.js").RhinofiProtocolConfig;
+export { default, default as RhinofiProtocol } from "./src/rhinofi-protocol.js";

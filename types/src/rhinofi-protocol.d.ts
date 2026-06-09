@@ -24,51 +24,122 @@ export default class RhinofiProtocol extends SwidgeProtocol {
      */
     constructor(account: IWalletAccount, config?: RhinofiProtocolConfig);
     /**
-     * The rhinofi protocol configuration.
+     * The rhino.fi SDK instance.
      *
-     * @protected
-     * @type {RhinofiProtocolConfig}
+     * @private
      */
-    protected _config: RhinofiProtocolConfig;
+    private _sdk;
     /**
-     * Quotes the estimated costs and output of a swidge operation.
-     * Returns a non-binding quote; the actual execution is performed
-     * by {@link swidge}.
+     * How long (ms) to cache the rhino.fi config / swap-token lists.
      *
+     * @private
+     * @type {number}
+     */
+    private _configTtlMs;
+    /**
+     * TTL cache for the (rarely-changing) config fetches, keyed by fetch name.
+     *
+     * @private
+     * @type {Map<string, { expiresAt: number, promise: Promise<unknown> }>}
+     */
+    private _cache;
+    /**
+     * Memoizes an async fetch for `configTtlMs`, so bursts of calls (e.g. quoting
+     * on every keystroke) reuse one in-flight or recent result while staying fresh
+     * within the window. Failures are not cached, so the next call retries.
+     *
+     * @private
+     * @template T
+     * @param {string} key - The cache key.
+     * @param {() => Promise<T>} fetcher - The underlying fetch.
+     * @returns {Promise<T>} The cached (or freshly fetched) result.
+     */
+    private _cached;
+    /**
+     * Awaits a rhino.fi SDK call, converting both transport rejections (network,
+     * DNS, TLS) and `{ error }` results into a {@link SwidgeExecutionError}.
+     *
+     * @private
+     * @template T
+     * @param {Promise<{ data?: T, error?: unknown }>} promise - The SDK call.
+     * @param {string} message - The contextual error message.
+     * @returns {Promise<T | undefined>} The unwrapped result data.
+     */
+    private _call;
+    /**
+     * Fetches the rhino.fi bridge config (`/configs`). Fetched fresh each call so
+     * newly added chains/tokens or updated contract addresses are picked up.
+     *
+     * @private
+     * @returns {Promise<BridgeConfig>} The bridge config, keyed by chain.
+     */
+    private _getConfig;
+    /**
+     * Fetches the rhino.fi swap-token config. Returns an empty list if the endpoint
+     * is unavailable, since swap tokens are supplementary to the bridge config.
+     *
+     * @private
+     * @returns {Promise<SwapTokens>} The swap-token config entries.
+     */
+    private _getSwapTokens;
+    /**
+     * Ensures the protocol has a full (signing) account — one that can sign and
+     * broadcast transactions via `sendTransaction`.
+     *
+     * @private
+     * @param {string} operation - A description of the operation requiring the account.
+     * @returns {IWalletAccount} The full wallet account.
+     * @throws {AccountRequiredError} If the account is missing or read-only.
+     */
+    private _requireFullAccount;
+    /**
+     * Resolves the source/destination chains and tokens for a swidge operation.
+     * The source chain is taken from the account (the WDK `SwidgeOptions` carry
+     * only `toChain`), so the account must be connected to a provider.
+     *
+     * @private
      * @param {SwidgeOptions} options - The swidge options.
-     * @returns {Promise<SwidgeQuote>} The quoted swidge details.
+     * @returns {Promise<ResolvedRoute>} The resolved route.
+     * @throws {RhinofiProtocolError} If the source chain cannot be determined from the account.
      */
-    quoteSwidge(options: SwidgeOptions): Promise<SwidgeQuote>;
+    private _resolveRoute;
     /**
-     * Executes a swidge operation.
+     * Determines the rhino.fi quote `amount` (decimal string) and `mode` from the
+     * exact-in / exact-out options.
      *
+     * @private
      * @param {SwidgeOptions} options - The swidge options.
-     * @param {SwidgeProtocolConfig} [config] - Optional provider-specific execution configuration.
-     * @returns {Promise<SwidgeResult>} The swidge execution result.
+     * @param {{ fromToken: TokenConfig, toToken: TokenConfig }} route - The resolved route.
+     * @returns {{ amount: string, mode: 'pay' | 'receive' }} The quote amount and mode.
      */
-    swidge(options: SwidgeOptions, config?: SwidgeProtocolConfig): Promise<SwidgeResult>;
+    private _resolveAmount;
     /**
-     * Retrieves the current status of an in-flight swidge.
+     * Builds the rhino.fi bridge data for a swidge operation.
      *
-     * @param {string} id - The swidge execution identifier returned by swidge.
-     * @param {SwidgeStatusOptions} [options] - Optional hints to assist provider lookups.
-     * @returns {Promise<SwidgeStatusResult>} The current swidge status.
-     * @throws {Error} If the id is invalid, or no swidge exists with the given identifier.
+     * @private
+     * @param {{ route: ResolvedRoute, amount: string, mode: 'pay' | 'receive', depositor: string, recipient: string, options: SwidgeOptions }} args - The build arguments.
+     * @returns {BridgeData} The rhino.fi bridge data.
      */
-    getSwidgeStatus(id: string, options?: SwidgeStatusOptions): Promise<SwidgeStatusResult>;
+    private _buildBridgeData;
     /**
-     * Retrieves the chains supported by the provider for swidge operations.
+     * Runs the approval (if needed) and deposit steps of a prepared bridge.
      *
-     * @returns {Promise<SwidgeSupportedChain[]>} The supported chains.
+     * @private
+     * @param {Exclude<PrepareBridgeFunctionResult, { type: 'error' }>} prep - The (non-error) result of `prepareBridge`.
+     * @param {(approvalTxHash: string) => void} onApproval - Called with the approval transaction hash when one is broadcast.
+     * @returns {Promise<BridgeResult>} The bridge result (resolves only on full settlement).
      */
-    getSupportedChains(): Promise<SwidgeSupportedChain[]>;
+    private _runBridge;
     /**
-     * Retrieves the tokens supported by the provider for swidge operations.
+     * Enforces the configured network/protocol fee limits against a quote.
      *
-     * @param {SwidgeSupportedTokensOptions} [options] - Optional filters for chain- or route-scoped token discovery.
-     * @returns {Promise<SwidgeSupportedToken[]>} The supported tokens.
+     * @private
+     * @param {SwidgeFee[]} fees - The mapped fees.
+     * @param {bigint} inputAmount - The input amount in base units.
+     * @param {RhinofiProtocolConfig} config - The resolved configuration.
+     * @throws {FeeLimitExceededError} If a fee exceeds its configured maximum.
      */
-    getSupportedTokens(options?: SwidgeSupportedTokensOptions): Promise<SwidgeSupportedToken[]>;
+    private _enforceFeeLimits;
 }
 export type IWalletAccount = import("@tetherto/wdk-wallet").IWalletAccount;
 export type IWalletAccountReadOnly = import("@tetherto/wdk-wallet").IWalletAccountReadOnly;
@@ -81,10 +152,50 @@ export type SwidgeStatusResult = import("@tetherto/wdk-wallet/protocols").Swidge
 export type SwidgeSupportedChain = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedChain;
 export type SwidgeSupportedToken = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedToken;
 export type SwidgeSupportedTokensOptions = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedTokensOptions;
+export type SwidgeFee = import("@tetherto/wdk-wallet/protocols").SwidgeFee;
+export type SwidgeTransaction = import("@tetherto/wdk-wallet/protocols").SwidgeTransaction;
+export type SwidgeExecutionError = import("./errors.js").SwidgeExecutionError;
+export type UnsupportedChainError = import("./errors.js").UnsupportedChainError;
+export type UnsupportedTokenError = import("./errors.js").UnsupportedTokenError;
+export type BridgeConfig = import("@rhino.fi/sdk").BridgeConfig;
+export type ChainConfig = import("@rhino.fi/sdk").ChainConfig;
+export type TokenConfig = import("@rhino.fi/sdk").TokenConfig;
+export type BridgeData = import("@rhino.fi/sdk").BridgeData;
+export type BridgeResult = import("@rhino.fi/sdk").BridgeResult;
+export type PrepareBridgeFunctionResult = import("@rhino.fi/sdk").PrepareBridgeFunctionResult;
+export type SwapTokenEntry = import("./mappers.js").SwapTokenEntry;
+export type SwapTokens = SwapTokenEntry[] | Record<string, SwapTokenEntry[]>;
+export type ResolvedChain = {
+    key: string;
+    entry: ChainConfig;
+};
+export type ResolvedRoute = {
+    config: BridgeConfig;
+    from: ResolvedChain;
+    to: ResolvedChain;
+    fromToken: TokenConfig;
+    toToken: TokenConfig;
+};
 export type RhinofiProtocolConfig = {
     /**
-     * - The default slippage tolerance as a decimal (e.g., 0.01 for 1%).
+     * - The rhino.fi API key. Required: the SDK authenticates every request (including quotes).
      */
-    defaultSlippage?: number;
+    apiKey: string;
+    /**
+     * - Override for the rhino.fi API base URL (defaults to mainnet). Any trailing slash is stripped, since the SDK appends its own paths.
+     */
+    apiBaseUrl?: string;
+    /**
+     * - Maximum acceptable network fee in basis points of the input amount.
+     */
+    maxNetworkFeeBps?: number | bigint;
+    /**
+     * - Maximum acceptable protocol fee in basis points of the input amount.
+     */
+    maxProtocolFeeBps?: number | bigint;
+    /**
+     * - How long (ms) to cache the rhino.fi config and swap-token lists. Bursts of calls within the window reuse one fetch. Defaults to 60000 (60s); set to 0 to always fetch fresh.
+     */
+    configTtlMs?: number;
 };
 import { SwidgeProtocol } from '@tetherto/wdk-wallet/protocols';
