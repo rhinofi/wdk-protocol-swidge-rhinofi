@@ -51,25 +51,11 @@ import {
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeSupportedChain} SwidgeSupportedChain */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeSupportedToken} SwidgeSupportedToken */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeSupportedTokensOptions} SwidgeSupportedTokensOptions */
-/** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeFee} SwidgeFee */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeTransaction} SwidgeTransaction */
 
 /** @typedef {import('./errors.js').SwidgeExecutionError} SwidgeExecutionError */
 /** @typedef {import('./errors.js').UnsupportedChainError} UnsupportedChainError */
 /** @typedef {import('./errors.js').UnsupportedTokenError} UnsupportedTokenError */
-
-/** @typedef {import('@rhino.fi/sdk').BridgeConfig} BridgeConfig */
-/** @typedef {import('@rhino.fi/sdk').ChainConfig} ChainConfig */
-/** @typedef {import('@rhino.fi/sdk').TokenConfig} TokenConfig */
-/** @typedef {import('@rhino.fi/sdk').BridgeData} BridgeData */
-/** @typedef {import('@rhino.fi/sdk').BridgeResult} BridgeResult */
-/** @typedef {import('@rhino.fi/sdk').PrepareBridgeFunctionResult} PrepareBridgeFunctionResult */
-
-/** @typedef {import('./mappers.js').SwapTokenEntry} SwapTokenEntry */
-/** @typedef {SwapTokenEntry[] | Record<string, SwapTokenEntry[]>} SwapTokens */
-
-/** @typedef {{ key: string, entry: ChainConfig }} ResolvedChain */
-/** @typedef {{ config: BridgeConfig, from: ResolvedChain, to: ResolvedChain, fromToken: TokenConfig, toToken: TokenConfig }} ResolvedRoute */
 
 /**
  * Unwraps a rhino.fi SDK `{ data, error }` result, throwing on error.
@@ -88,7 +74,9 @@ const unwrap = (result, message) => {
 }
 
 /**
- * @typedef {object} RhinofiProtocolConfig
+ * The configuration accepted by {@link RhinofiProtocol}.
+ *
+ * @typedef {Object} RhinofiProtocolConfig
  * @property {string} apiKey - The rhino.fi API key. Required: the SDK authenticates every request (including quotes).
  * @property {string} [apiBaseUrl] - Override for the rhino.fi API base URL (defaults to mainnet). Any trailing slash is stripped, since the SDK appends its own paths.
  * @property {number | bigint} [maxNetworkFeeBps] - Maximum acceptable network fee in basis points of the input amount.
@@ -137,44 +125,23 @@ export default class RhinofiProtocol extends SwidgeProtocol {
       throw new ConfigurationError('A rhino.fi `apiKey` is required: the SDK authenticates every request (including quotes).')
     }
 
-    /**
-     * The rhino.fi SDK instance.
-     *
-     * @private
-     */
+    /** @private */
     this._sdk = RhinoSdk({
       apiKey: config.apiKey,
       ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl.replace(/\/+$/, '') } : {})
     })
 
-    /**
-     * How long (ms) to cache the rhino.fi config / swap-token lists.
-     *
-     * @private
-     * @type {number}
-     */
+    /** @private */
     this._configTtlMs = config.configTtlMs ?? DEFAULT_CONFIG_TTL_MS
 
-    /**
-     * TTL cache for the (rarely-changing) config fetches, keyed by fetch name.
-     *
-     * @private
-     * @type {Map<string, { expiresAt: number, promise: Promise<unknown> }>}
-     */
+    /** @private */
     this._cache = new Map()
   }
 
-  /**
-   * Memoizes an async fetch for `configTtlMs`, so bursts of calls (e.g. quoting
-   * on every keystroke) reuse one in-flight or recent result while staying fresh
-   * within the window. Failures are not cached, so the next call retries.
-   *
-   * @private
-   * @template T
-   * @param {string} key - The cache key.
-   * @param {() => Promise<T>} fetcher - The underlying fetch.
-   * @returns {Promise<T>} The cached (or freshly fetched) result.
-   */
+  // Memoizes an async fetch for `configTtlMs`, so bursts of calls (e.g. quoting
+  // on every keystroke) reuse one in-flight or recent result while staying fresh
+  // within the window. Failures are not cached, so the next call retries.
+  /** @private */
   _cached (key, fetcher) {
     const cached = this._cache.get(key)
     if (cached && cached.expiresAt > Date.now()) {
@@ -198,6 +165,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
    * @throws {RhinofiProtocolError} If the source chain cannot be determined from the account.
    * @throws {UnsupportedChainError} If the source or destination chain is unsupported.
    * @throws {UnsupportedTokenError} If a token is unsupported on its chain.
+   * @throws {SwidgeExecutionError} If the rhino.fi quote request fails.
    */
   async quoteSwidge (options) {
     const route = await this._resolveRoute(options)
@@ -232,6 +200,9 @@ export default class RhinofiProtocol extends SwidgeProtocol {
    * @param {SwidgeProtocolConfig} [config] - Optional per-call configuration (overrides constructor config).
    * @returns {Promise<SwidgeResult>} The swidge execution result.
    * @throws {AccountRequiredError} If no account, or a read-only account, was given at construction.
+   * @throws {RhinofiProtocolError} If the source chain cannot be determined from the account.
+   * @throws {UnsupportedChainError} If the source or destination chain is unsupported.
+   * @throws {UnsupportedTokenError} If a token is unsupported on its chain.
    * @throws {FeeLimitExceededError} If the quoted fees exceed the configured maximums.
    * @throws {SwidgeExecutionError} If the underlying rhino.fi operation fails.
    */
@@ -317,6 +288,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
    * @param {SwidgeStatusOptions} [options] - Optional hints to assist provider lookups.
    * @returns {Promise<SwidgeStatusResult>} The current swidge status.
    * @throws {UnknownOperationError} If the id is invalid, or no swidge exists with the given identifier.
+   * @throws {SwidgeExecutionError} If the rhino.fi status request fails.
    */
   async getSwidgeStatus (id, options = {}) {
     if (!id) throw new UnknownOperationError(id)
@@ -370,16 +342,9 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     return mapSupportedTokens(config, { swapTokens, filter: options })
   }
 
-  /**
-   * Awaits a rhino.fi SDK call, converting both transport rejections (network,
-   * DNS, TLS) and `{ error }` results into a {@link SwidgeExecutionError}.
-   *
-   * @private
-   * @template T
-   * @param {Promise<{ data?: T, error?: unknown }>} promise - The SDK call.
-   * @param {string} message - The contextual error message.
-   * @returns {Promise<T | undefined>} The unwrapped result data.
-   */
+  // Awaits a rhino.fi SDK call, converting both transport rejections (network,
+  // DNS, TLS) and `{ error }` results into a SwidgeExecutionError.
+  /** @private */
   async _call (promise, message) {
     let result
     try {
@@ -390,26 +355,16 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     return unwrap(result, message)
   }
 
-  /**
-   * Fetches the rhino.fi bridge config (`/configs`). Fetched fresh each call so
-   * newly added chains/tokens or updated contract addresses are picked up.
-   *
-   * @private
-   * @returns {Promise<BridgeConfig>} The bridge config, keyed by chain.
-   */
+  /** @private */
   async _getConfig () {
     return this._cached('config', () =>
       this._call(this._sdk.api.bridge.getBridgeConfig(), 'Failed to fetch the rhino.fi bridge config.')
     )
   }
 
-  /**
-   * Fetches the rhino.fi swap-token config. Returns an empty list if the endpoint
-   * is unavailable, since swap tokens are supplementary to the bridge config.
-   *
-   * @private
-   * @returns {Promise<SwapTokens>} The swap-token config entries.
-   */
+  // Returns an empty list if the endpoint is unavailable, since swap tokens
+  // are supplementary to the bridge config.
+  /** @private */
   async _getSwapTokens () {
     try {
       const swapTokens = await this._cached('swapTokens', () =>
@@ -421,15 +376,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     }
   }
 
-  /**
-   * Ensures the protocol has a full (signing) account — one that can sign and
-   * broadcast transactions via `sendTransaction`.
-   *
-   * @private
-   * @param {string} operation - A description of the operation requiring the account.
-   * @returns {IWalletAccount} The full wallet account.
-   * @throws {AccountRequiredError} If the account is missing or read-only.
-   */
+  /** @private */
   _requireFullAccount (operation) {
     const account = /** @type {IWalletAccount | undefined} */ (this._account)
     if (!account || typeof account.sendTransaction !== 'function') {
@@ -438,16 +385,9 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     return account
   }
 
-  /**
-   * Resolves the source/destination chains and tokens for a swidge operation.
-   * The source chain is taken from the account (the WDK `SwidgeOptions` carry
-   * only `toChain`), so the account must be connected to a provider.
-   *
-   * @private
-   * @param {SwidgeOptions} options - The swidge options.
-   * @returns {Promise<ResolvedRoute>} The resolved route.
-   * @throws {RhinofiProtocolError} If the source chain cannot be determined from the account.
-   */
+  // The source chain is taken from the account (the WDK `SwidgeOptions` carry
+  // only `toChain`), so the account must be connected to a provider.
+  /** @private */
   async _resolveRoute (options) {
     const config = await this._getConfig()
     const networkId = await getAccountNetworkId(this._account)
@@ -463,15 +403,9 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     return { config, from, to, fromToken, toToken }
   }
 
-  /**
-   * Determines the rhino.fi quote `amount` (decimal string) and `mode` from the
-   * exact-in / exact-out options.
-   *
-   * @private
-   * @param {SwidgeOptions} options - The swidge options.
-   * @param {{ fromToken: TokenConfig, toToken: TokenConfig }} route - The resolved route.
-   * @returns {{ amount: string, mode: 'pay' | 'receive' }} The quote amount and mode.
-   */
+  // Determines the rhino.fi quote `amount` (decimal string) and `mode` from
+  // the exact-in / exact-out options.
+  /** @private */
   _resolveAmount (options, route) {
     const hasIn = options.fromTokenAmount != null
     const hasOut = options.toTokenAmount != null
@@ -487,13 +421,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     return { amount: toDecimalString(amountBase, token.decimals), mode }
   }
 
-  /**
-   * Builds the rhino.fi bridge data for a swidge operation.
-   *
-   * @private
-   * @param {{ route: ResolvedRoute, amount: string, mode: 'pay' | 'receive', depositor: string, recipient: string, options: SwidgeOptions }} args - The build arguments.
-   * @returns {BridgeData} The rhino.fi bridge data.
-   */
+  /** @private */
   _buildBridgeData ({ route, amount, mode, depositor, recipient, options }) {
     const base = {
       chainIn: route.from.key,
@@ -515,14 +443,9 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     }
   }
 
-  /**
-   * Runs the approval (if needed) and deposit steps of a prepared bridge.
-   *
-   * @private
-   * @param {Exclude<PrepareBridgeFunctionResult, { type: 'error' }>} prep - The (non-error) result of `prepareBridge`.
-   * @param {(approvalTxHash: string) => void} onApproval - Called with the approval transaction hash when one is broadcast.
-   * @returns {Promise<BridgeResult>} The bridge result (resolves only on full settlement).
-   */
+  // Runs the approval (if needed) and deposit steps of a prepared bridge.
+  // Resolves only on full settlement.
+  /** @private */
   async _runBridge (prep, onApproval) {
     if (prep.type === 'approval-needed') {
       const approveResult = await prep.approve()
@@ -536,15 +459,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     return prep.bridge()
   }
 
-  /**
-   * Enforces the configured network/protocol fee limits against a quote.
-   *
-   * @private
-   * @param {SwidgeFee[]} fees - The mapped fees.
-   * @param {bigint} inputAmount - The input amount in base units.
-   * @param {RhinofiProtocolConfig} config - The resolved configuration.
-   * @throws {FeeLimitExceededError} If a fee exceeds its configured maximum.
-   */
+  /** @private */
   _enforceFeeLimits (fees, inputAmount, config) {
     const sumByType = (type) =>
       fees.filter((fee) => fee.type === type).reduce((sum, fee) => sum + fee.amount, 0n)

@@ -39,3 +39,13 @@
 
 export { default, default as RhinofiProtocol } from './src/rhinofi-protocol.js'
 export { ISwidgeProtocol } from '@tetherto/wdk-wallet/protocols'
+export {
+  RhinofiProtocolError,
+  AccountRequiredError,
+  ConfigurationError,
+  UnsupportedChainError,
+  UnsupportedTokenError,
+  FeeLimitExceededError,
+  UnknownOperationError,
+  SwidgeExecutionError
+} from './src/errors.js'

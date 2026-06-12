@@ -4,6 +4,8 @@
  */
 export class RhinofiProtocolError extends Error {
     /**
+     * Creates a new rhinofi protocol error.
+     *
      * @param {string} message - The human-readable error message.
      * @param {{ cause?: unknown }} [options] - Optional error options (e.g. the underlying cause).
      */
@@ -18,7 +20,9 @@ export class RhinofiProtocolError extends Error {
  */
 export class AccountRequiredError extends RhinofiProtocolError {
     /**
-     * @param {string} [operation] - The operation that required the account.
+     * Creates a new account-required error.
+     *
+     * @param {string} [operation] - The operation that required the account (default: 'execute a swidge').
      */
     constructor(operation?: string);
 }
@@ -34,9 +38,16 @@ export class ConfigurationError extends RhinofiProtocolError {
  */
 export class UnsupportedChainError extends RhinofiProtocolError {
     /**
+     * Creates a new unsupported-chain error.
+     *
      * @param {string | number} chain - The unsupported chain identifier.
      */
     constructor(chain: string | number);
+    /**
+     * The unsupported chain identifier.
+     *
+     * @type {string | number}
+     */
     chain: string | number;
 }
 /**
@@ -44,11 +55,23 @@ export class UnsupportedChainError extends RhinofiProtocolError {
  */
 export class UnsupportedTokenError extends RhinofiProtocolError {
     /**
+     * Creates a new unsupported-token error.
+     *
      * @param {string} token - The unsupported token identifier.
      * @param {string | number} chain - The chain on which the token was looked up.
      */
     constructor(token: string, chain: string | number);
+    /**
+     * The unsupported token identifier.
+     *
+     * @type {string}
+     */
     token: string;
+    /**
+     * The chain on which the token was looked up.
+     *
+     * @type {string | number}
+     */
     chain: string | number;
 }
 /**
@@ -57,19 +80,50 @@ export class UnsupportedTokenError extends RhinofiProtocolError {
  */
 export class FeeLimitExceededError extends RhinofiProtocolError {
     /**
+     * Creates a new fee-limit-exceeded error.
+     *
      * @param {'network' | 'protocol'} feeType - Which fee threshold was exceeded.
      * @param {bigint} actualBps - The actual fee in basis points of the input.
      * @param {bigint} maxBps - The configured maximum in basis points.
      */
     constructor(feeType: "network" | "protocol", actualBps: bigint, maxBps: bigint);
+    /**
+     * Which fee threshold was exceeded.
+     *
+     * @type {'network' | 'protocol'}
+     */
     feeType: "network" | "protocol";
+    /**
+     * The actual fee in basis points of the input.
+     *
+     * @type {bigint}
+     */
     actualBps: bigint;
+    /**
+     * The configured maximum in basis points.
+     *
+     * @type {bigint}
+     */
     maxBps: bigint;
 }
 /**
  * Thrown when no swidge operation exists for the given identifier.
  */
 export class UnknownOperationError extends RhinofiProtocolError {
+    /**
+     * Creates a new unknown-operation error.
+     *
+     * @param {string} id - The unknown swidge identifier.
+     * @param {{ cause?: unknown }} [options] - Optional error options.
+     */
+    constructor(id: string, options?: {
+        cause?: unknown;
+    });
+    /**
+     * The unknown swidge identifier.
+     *
+     * @type {string}
+     */
     id: string;
 }
 /**
@@ -79,6 +133,8 @@ export class UnknownOperationError extends RhinofiProtocolError {
  */
 export class SwidgeExecutionError extends RhinofiProtocolError {
     /**
+     * Creates a new swidge execution error.
+     *
      * @param {string} message - The human-readable error message.
      * @param {{ cause?: unknown, code?: string }} [options] - Error options.
      */
@@ -86,13 +142,14 @@ export class SwidgeExecutionError extends RhinofiProtocolError {
         cause?: unknown;
         code?: string;
     });
-    /** @type {string | undefined} */
+    /**
+     * The rhino.fi failure type (e.g. 'InsufficientBalance'), when known.
+     *
+     * @type {string | undefined}
+     */
     code: string | undefined;
 }
-export function describeRhinoError(error: unknown): {
-    code?: string;
-    detail?: string;
-};
+export function describeRhinoError(error: unknown): RhinoErrorDescription;
 export function swidgeExecutionError(baseMessage: string, rhinoError: unknown): SwidgeExecutionError;
 /**
  * The shape this module reads from a rhino.fi SDK error to derive a code/detail.
@@ -128,4 +185,17 @@ export type RhinoErrorLike = {
      * - The unsupported tokens.
      */
     tokens?: string[];
+};
+/**
+ * The stable code and human-readable detail derived from a rhino.fi SDK error.
+ */
+export type RhinoErrorDescription = {
+    /**
+     * - The stable rhino.fi failure code (e.g. 'InsufficientBalance').
+     */
+    code?: string;
+    /**
+     * - A human-readable detail describing the failure.
+     */
+    detail?: string;
 };

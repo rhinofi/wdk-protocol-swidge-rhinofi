@@ -1,52 +1,3 @@
-/** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeStatus} SwidgeStatus */
-/** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeFee} SwidgeFee */
-/** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeQuote} SwidgeQuote */
-/** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeTransaction} SwidgeTransaction */
-/** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeSupportedChain} SwidgeSupportedChain */
-/** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeSupportedToken} SwidgeSupportedToken */
-/** @typedef {import('@rhino.fi/sdk').BridgeConfig} BridgeConfig */
-/** @typedef {import('@rhino.fi/sdk').ChainConfig} ChainConfig */
-/** @typedef {import('@rhino.fi/sdk').TokenConfig} TokenConfig */
-/**
- * The fee fields this module reads from a rhino.fi quote (amounts are decimal strings).
- *
- * @typedef {object} RhinoQuoteFees
- * @property {string} [fee] - The total fee in token units (authoritative).
- * @property {number} [feeUsd] - The total fee in USD.
- * @property {string} [gasFee] - The destination-chain gas fee.
- * @property {string} [sourceGasFee] - The source-chain gas fee.
- */
-/**
- * The subset of a rhino.fi quote response this module consumes. Both the public
- * quote (`getSwapPublicQuote`) and the user quote (`prepareBridge`) satisfy it.
- *
- * @typedef {object} RhinoQuote
- * @property {string} payAmount - The input amount (decimal string).
- * @property {string} receiveAmount - The output amount (decimal string).
- * @property {string} [minReceiveAmount] - The guaranteed minimum output, when present.
- * @property {RhinoQuoteFees} [fees] - The fee breakdown.
- * @property {number} [estimatedDuration] - The estimated duration in milliseconds.
- * @property {number} [payAmountUsd] - The USD value of the input.
- * @property {number} [receiveAmountUsd] - The USD value of the output.
- */
-/**
- * The transaction-hash fields this module reads from a rhino.fi bridge status.
- *
- * @typedef {object} BridgeStatusData
- * @property {string} [depositTxHash] - The source-chain deposit transaction hash.
- * @property {string} [withdrawTxHash] - The destination-chain withdrawal hash.
- * @property {string} [refundTxHash] - The refund transaction hash, if refunded.
- */
-/**
- * A rhino.fi swap-token config entry (the fields this module consumes).
- *
- * @typedef {object} SwapTokenEntry
- * @property {string} chain - The rhino chain key.
- * @property {string} symbol - The token symbol.
- * @property {number} decimals - The token's number of decimals.
- * @property {string} tokenAddress - The token's contract address.
- * @property {string} [name] - The token's display name.
- */
 /**
  * Maps rhino.fi bridge `state` values to the canonical WDK {@link SwidgeStatus}.
  * Unknown states default to `pending` (still in flight) to stay forward-compatible.
@@ -58,35 +9,14 @@ export function mapStateToStatus(state: string): SwidgeStatus;
 export function toBigInt(value: number | bigint | string): bigint;
 export function toBaseUnits(decimalString: string | number, decimals: number): bigint;
 export function toDecimalString(amount: bigint | number, decimals: number): string;
-export function resolveChain(config: BridgeConfig, chain: string | number): {
-    key: string;
-    entry: ChainConfig;
-};
+export function resolveChain(config: BridgeConfig, chain: string | number): ChainEntry;
 export function resolveToken(chainEntry: ChainConfig, token: string, chainLabel: string | number): TokenConfig;
 export function mapSupportedChains(config: BridgeConfig): SwidgeSupportedChain[];
-export function mapSupportedTokens(config: BridgeConfig, opts?: {
-    swapTokens?: SwapTokenEntry[] | Record<string, SwapTokenEntry[]>;
-    filter?: {
-        fromChain?: string | number;
-        toChain?: string | number;
-    };
-}): SwidgeSupportedToken[];
-export function mapFees(fees: RhinoQuoteFees | undefined, { token, chain, decimals }: {
-    token: string;
-    chain: string | number;
-    decimals: number;
-}): SwidgeFee[];
+export function mapSupportedTokens(config: BridgeConfig, opts?: MapSupportedTokensOptions): SwidgeSupportedToken[];
+export function mapFees(fees: RhinoQuoteFees | undefined, ctx: FeeContext): SwidgeFee[];
 export function computeFeeBps(feeAmount: bigint, inputAmount: bigint): bigint;
-export function mapQuote(quote: RhinoQuote, { fromToken, fromDecimals, toDecimals, fromChain }: {
-    fromToken: string;
-    fromDecimals: number;
-    toDecimals: number;
-    fromChain: string | number;
-}): SwidgeQuote;
-export function mapStatusTransactions(data: BridgeStatusData, chains?: {
-    fromChain?: string | number;
-    toChain?: string | number;
-}): SwidgeTransaction[];
+export function mapQuote(quote: RhinoQuote, ctx: QuoteContext): SwidgeQuote;
+export function mapStatusTransactions(data: BridgeStatusData, chains?: ChainScope): SwidgeTransaction[];
 export type SwidgeStatus = import("@tetherto/wdk-wallet/protocols").SwidgeStatus;
 export type SwidgeFee = import("@tetherto/wdk-wallet/protocols").SwidgeFee;
 export type SwidgeQuote = import("@tetherto/wdk-wallet/protocols").SwidgeQuote;
@@ -192,4 +122,81 @@ export type SwapTokenEntry = {
      * - The token's display name.
      */
     name?: string;
+};
+/**
+ * A rhino.fi chain key paired with its bridge-config entry.
+ */
+export type ChainEntry = {
+    /**
+     * - The rhino chain key (e.g. 'ARBITRUM').
+     */
+    key: string;
+    /**
+     * - The chain's config entry.
+     */
+    entry: ChainConfig;
+};
+/**
+ * A chain scope: the source and/or destination chain of an operation.
+ */
+export type ChainScope = {
+    /**
+     * - The source chain identifier (rhino key or network id).
+     */
+    fromChain?: string | number;
+    /**
+     * - The destination chain identifier (rhino key or network id).
+     */
+    toChain?: string | number;
+};
+/**
+ * The input-token context a fee is denominated in.
+ */
+export type FeeContext = {
+    /**
+     * - The input token symbol (fee denomination).
+     */
+    token: string;
+    /**
+     * - The chain the fee is charged on.
+     */
+    chain: string | number;
+    /**
+     * - The input token's number of decimals.
+     */
+    decimals: number;
+};
+/**
+ * The token/chain context used to map a rhino.fi quote into base-unit amounts.
+ */
+export type QuoteContext = {
+    /**
+     * - The source token symbol (fee denomination).
+     */
+    fromToken: string;
+    /**
+     * - The source token's number of decimals.
+     */
+    fromDecimals: number;
+    /**
+     * - The destination token's number of decimals.
+     */
+    toDecimals: number;
+    /**
+     * - The source chain identifier (fee chain).
+     */
+    fromChain: string | number;
+};
+/**
+ * The options accepted by {@link mapSupportedTokens}.
+ */
+export type MapSupportedTokensOptions = {
+    /**
+     * - The rhino.fi swap-token config (a flat list, or keyed by chain).
+     */
+    swapTokens?: SwapTokenEntry[] | Record<string, SwapTokenEntry[]>;
+    /**
+     * - Chain scope; results are limited to `fromChain`, or `toChain` if `fromChain` is absent.
+     */
+    filter?: ChainScope;
 };

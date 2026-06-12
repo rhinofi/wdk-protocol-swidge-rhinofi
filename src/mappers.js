@@ -35,7 +35,7 @@ const MIN_PRICE_IMPACT = 1e-9
 /**
  * The fee fields this module reads from a rhino.fi quote (amounts are decimal strings).
  *
- * @typedef {object} RhinoQuoteFees
+ * @typedef {Object} RhinoQuoteFees
  * @property {string} [fee] - The total fee in token units (authoritative).
  * @property {number} [feeUsd] - The total fee in USD.
  * @property {string} [gasFee] - The destination-chain gas fee.
@@ -46,7 +46,7 @@ const MIN_PRICE_IMPACT = 1e-9
  * The subset of a rhino.fi quote response this module consumes. Both the public
  * quote (`getSwapPublicQuote`) and the user quote (`prepareBridge`) satisfy it.
  *
- * @typedef {object} RhinoQuote
+ * @typedef {Object} RhinoQuote
  * @property {string} payAmount - The input amount (decimal string).
  * @property {string} receiveAmount - The output amount (decimal string).
  * @property {string} [minReceiveAmount] - The guaranteed minimum output, when present.
@@ -59,7 +59,7 @@ const MIN_PRICE_IMPACT = 1e-9
 /**
  * The transaction-hash fields this module reads from a rhino.fi bridge status.
  *
- * @typedef {object} BridgeStatusData
+ * @typedef {Object} BridgeStatusData
  * @property {string} [depositTxHash] - The source-chain deposit transaction hash.
  * @property {string} [withdrawTxHash] - The destination-chain withdrawal hash.
  * @property {string} [refundTxHash] - The refund transaction hash, if refunded.
@@ -68,12 +68,55 @@ const MIN_PRICE_IMPACT = 1e-9
 /**
  * A rhino.fi swap-token config entry (the fields this module consumes).
  *
- * @typedef {object} SwapTokenEntry
+ * @typedef {Object} SwapTokenEntry
  * @property {string} chain - The rhino chain key.
  * @property {string} symbol - The token symbol.
  * @property {number} decimals - The token's number of decimals.
  * @property {string} tokenAddress - The token's contract address.
  * @property {string} [name] - The token's display name.
+ */
+
+/**
+ * A rhino.fi chain key paired with its bridge-config entry.
+ *
+ * @typedef {Object} ChainEntry
+ * @property {string} key - The rhino chain key (e.g. 'ARBITRUM').
+ * @property {ChainConfig} entry - The chain's config entry.
+ */
+
+/**
+ * A chain scope: the source and/or destination chain of an operation.
+ *
+ * @typedef {Object} ChainScope
+ * @property {string | number} [fromChain] - The source chain identifier (rhino key or network id).
+ * @property {string | number} [toChain] - The destination chain identifier (rhino key or network id).
+ */
+
+/**
+ * The input-token context a fee is denominated in.
+ *
+ * @typedef {Object} FeeContext
+ * @property {string} token - The input token symbol (fee denomination).
+ * @property {string | number} chain - The chain the fee is charged on.
+ * @property {number} decimals - The input token's number of decimals.
+ */
+
+/**
+ * The token/chain context used to map a rhino.fi quote into base-unit amounts.
+ *
+ * @typedef {Object} QuoteContext
+ * @property {string} fromToken - The source token symbol (fee denomination).
+ * @property {number} fromDecimals - The source token's number of decimals.
+ * @property {number} toDecimals - The destination token's number of decimals.
+ * @property {string | number} fromChain - The source chain identifier (fee chain).
+ */
+
+/**
+ * The options accepted by {@link mapSupportedTokens}.
+ *
+ * @typedef {Object} MapSupportedTokensOptions
+ * @property {SwapTokenEntry[] | Record<string, SwapTokenEntry[]>} [swapTokens] - The rhino.fi swap-token config (a flat list, or keyed by chain).
+ * @property {ChainScope} [filter] - Chain scope; results are limited to `fromChain`, or `toChain` if `fromChain` is absent.
  */
 
 /**
@@ -109,6 +152,7 @@ export const mapStateToStatus = (state) => STATE_TO_STATUS[state] ?? 'pending'
  *
  * @param {number | bigint | string} value - The amount in base units.
  * @returns {bigint} The amount as a bigint.
+ * @throws {RangeError} If a number amount is not an integer.
  */
 export const toBigInt = (value) => {
   if (typeof value === 'bigint') return value
@@ -147,7 +191,7 @@ export const toDecimalString = (amount, decimals) =>
  *
  * @param {BridgeConfig} config - The rhino.fi `/configs` response.
  * @param {string | number} chain - The chain identifier to resolve.
- * @returns {{ key: string, entry: ChainConfig }} The matched chain key and config entry.
+ * @returns {ChainEntry} The matched chain key and config entry.
  * @throws {UnsupportedChainError} If the chain cannot be resolved.
  */
 export const resolveChain = (config, chain) => {
@@ -206,9 +250,7 @@ export const mapSupportedChains = (config) =>
  * supported tokens, optionally filtered to a route.
  *
  * @param {BridgeConfig} config - The rhino.fi `/configs` response.
- * @param {object} [opts]
- * @param {SwapTokenEntry[] | Record<string, SwapTokenEntry[]>} [opts.swapTokens] - The rhino.fi swap-token config (a flat list, or keyed by chain).
- * @param {{ fromChain?: string | number, toChain?: string | number }} [opts.filter] - Chain scope; results are limited to `fromChain`, or `toChain` if `fromChain` is absent.
+ * @param {MapSupportedTokensOptions} [opts] - The swap-token config and chain-scope filter.
  * @returns {SwidgeSupportedToken[]} The supported tokens (on the scoped chain, or every chain if unscoped).
  */
 export const mapSupportedTokens = (config, opts = {}) => {
@@ -269,7 +311,7 @@ export const mapSupportedTokens = (config, opts = {}) => {
  * protocol is the rest of the total (`fee` − gas).
  *
  * @param {RhinoQuoteFees | undefined} fees - The `fees` object from a rhino.fi quote response.
- * @param {{ token: string, chain: string | number, decimals: number }} ctx - The input-token context.
+ * @param {FeeContext} ctx - The input-token context the fees are denominated in.
  * @returns {SwidgeFee[]} The itemised fees (always at least the network fee).
  */
 export const mapFees = (fees, { token, chain, decimals }) => {
@@ -315,11 +357,7 @@ export const computeFeeBps = (feeAmount, inputAmount) =>
  * Maps a rhino.fi public/user quote response to a {@link SwidgeQuote}.
  *
  * @param {RhinoQuote} quote - The rhino.fi quote response.
- * @param {object} ctx
- * @param {string} ctx.fromToken - The source token symbol (fee denomination).
- * @param {number} ctx.fromDecimals - The source token decimals.
- * @param {number} ctx.toDecimals - The destination token decimals.
- * @param {string | number} ctx.fromChain - The source chain identifier (fee chain).
+ * @param {QuoteContext} ctx - The token/chain context for base-unit conversion.
  * @returns {SwidgeQuote} The mapped quote.
  */
 export const mapQuote = (quote, { fromToken, fromDecimals, toDecimals, fromChain }) => {
@@ -353,7 +391,7 @@ export const mapQuote = (quote, { fromToken, fromDecimals, toDecimals, fromChain
  * Builds the {@link SwidgeTransaction} list from a rhino.fi bridge status `data`.
  *
  * @param {BridgeStatusData} data - The rhino.fi bridge status `data`.
- * @param {{ fromChain?: string | number, toChain?: string | number }} [chains] - Chain hints for labelling.
+ * @param {ChainScope} [chains] - Chain hints used to label the transactions.
  * @returns {SwidgeTransaction[]} The associated transactions.
  */
 export const mapStatusTransactions = (data, chains = {}) => {

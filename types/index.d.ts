@@ -1,4 +1,5 @@
 export { ISwidgeProtocol } from "@tetherto/wdk-wallet/protocols";
+export { RhinofiProtocolError, AccountRequiredError, ConfigurationError, UnsupportedChainError, UnsupportedTokenError, FeeLimitExceededError, UnknownOperationError, SwidgeExecutionError } from "./src/errors.js";
 export type SwapOptions = import("@tetherto/wdk-wallet/protocols").SwapOptions;
 export type SwapResult = import("@tetherto/wdk-wallet/protocols").SwapResult;
 export type BridgeOptions = import("@tetherto/wdk-wallet/protocols").BridgeOptions;
