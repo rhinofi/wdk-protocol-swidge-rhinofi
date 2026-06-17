@@ -33,7 +33,7 @@
     "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage"
   },
   "dependencies": {
-    "@rhino.fi/sdk": "1.12.4",
+    "@rhino.fi/sdk": "1.13.0",
     "@tetherto/wdk-wallet": "1.0.0-beta.9",
     "bare-node-runtime": "1.1.4",
     "decimal.js": "10.6.0"
