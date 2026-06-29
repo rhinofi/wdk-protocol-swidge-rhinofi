@@ -1,5 +1,7 @@
 node_modules
 coverage
 tests
+scripts
 tsconfig.json
+hardhat.config.cjs
 .github

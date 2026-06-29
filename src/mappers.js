@@ -154,16 +154,7 @@ export const mapStateToStatus = (state) => STATE_TO_STATUS[state] ?? 'pending'
  * @returns {bigint} The amount as a bigint.
  * @throws {RangeError} If a number amount is not an integer.
  */
-export const toBigInt = (value) => {
-  if (typeof value === 'bigint') return value
-  if (typeof value === 'number') {
-    if (!Number.isInteger(value)) {
-      throw new RangeError(`Expected an integer base-unit amount, received ${value}`)
-    }
-    return BigInt(value)
-  }
-  return BigInt(value)
-}
+export const toBigInt = (value) => BigInt(value)
 
 /**
  * Converts a human-readable decimal string (rhino.fi wire format) into base units.
