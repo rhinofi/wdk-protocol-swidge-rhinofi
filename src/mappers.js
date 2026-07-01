@@ -246,7 +246,6 @@ export const mapSupportedChains = (config) =>
  */
 export const mapSupportedTokens = (config, opts = {}) => {
   const { swapTokens = [], filter = {} } = opts
-  /** @type {SwidgeSupportedToken[]} */
   const tokens = []
   const seen = new Set()
 
@@ -310,7 +309,6 @@ export const mapFees = (fees, { token, chain, decimals }) => {
   const total = new Decimal(fees?.fee ?? '0')
   const protocol = total.sub(network)
 
-  /** @type {SwidgeFee[]} */
   const result = [
     {
       type: 'network',
@@ -359,7 +357,6 @@ export const mapQuote = (quote, { fromToken, fromDecimals, toDecimals, fromChain
     ? toBaseUnits(quote.minReceiveAmount, toDecimals)
     : toTokenAmount
 
-  /** @type {SwidgeQuote} */
   const result = {
     fromTokenAmount,
     toTokenAmount,
@@ -387,7 +384,6 @@ export const mapQuote = (quote, { fromToken, fromDecimals, toDecimals, fromChain
  */
 export const mapStatusTransactions = (data, chains = {}) => {
   const { fromChain, toChain } = chains
-  /** @type {SwidgeTransaction[]} */
   const transactions = []
   if (data?.depositTxHash) {
     transactions.push({ hash: data.depositTxHash, type: 'source', ...(fromChain != null ? { chain: fromChain } : {}) })

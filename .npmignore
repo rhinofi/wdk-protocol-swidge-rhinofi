@@ -2,6 +2,7 @@ node_modules
 coverage
 tests
 scripts
+examples
 tsconfig.json
 hardhat.config.cjs
 .github

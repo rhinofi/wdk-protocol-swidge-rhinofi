@@ -27,10 +27,10 @@ import { RhinofiProtocolError, UnsupportedChainError } from './errors.js'
 /**
  * Reads the chain the account is connected to, which is the source chain for a
  * swidge (the WDK `SwidgeOptions` carry only a destination `toChain`). The WDK
- * account interface exposes no network accessor, so this reads the ethers
- * provider the account signs with: directly for EVM accounts, and through the
- * owner account for ERC-4337 smart accounts. Read-only ERC-4337 accounts expose
- * the chain only through their config. An account with neither returns `null`
+ * account interface exposes no network accessor, so this reads the provider the
+ * account signs with. EVM accounts expose an ethers provider (`getNetwork`);
+ * ERC-4337 accounts expose an EIP-1193 provider (`request`) — the chain id is
+ * read through whichever this is. An account without a provider returns `null`
  * (the caller then has no source chain and must error).
  *
  * @internal
@@ -39,18 +39,16 @@ import { RhinofiProtocolError, UnsupportedChainError } from './errors.js'
  * @throws {RhinofiProtocolError} If the account has a provider but reading its network fails (e.g. a connection error).
  */
 export const getAccountNetworkId = async (account) => {
-  if (!account) return null
-  const provider = account._provider ?? account._ownerAccount?._provider
-  if (provider) {
-    try {
-      const { chainId } = await provider.getNetwork()
-      return Number(chainId)
-    } catch (cause) {
-      throw new RhinofiProtocolError('Failed to read the source chain from the wallet account provider.', { cause })
-    }
+  const provider = account?._provider
+  if (!provider) return null
+  try {
+    const chainId = typeof provider.getNetwork === 'function'
+      ? (await provider.getNetwork()).chainId
+      : await provider.request({ method: 'eth_chainId' })
+    return Number(chainId)
+  } catch (cause) {
+    throw new RhinofiProtocolError('Failed to read the source chain from the wallet account provider.', { cause })
   }
-  const configChainId = account._config?.chainId
-  return configChainId != null ? Number(configChainId) : null
 }
 
 /**

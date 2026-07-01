@@ -150,10 +150,11 @@ export class UnknownOperationError extends RhinofiProtocolError {
    * Creates a new unknown-operation error.
    *
    * @param {string} id - The unknown swidge identifier.
-   * @param {{ cause?: unknown }} [options] - Optional error options.
+   * @param {Object} [details] - Optional error details.
+   * @param {unknown} [details.cause] - The error's cause.
    */
-  constructor (id, options) {
-    super(`No swidge operation found for id "${id}".`, options)
+  constructor (id, details) {
+    super(`No swidge operation found for id "${id}".`, details)
 
     /**
      * The unknown swidge identifier.
@@ -174,16 +175,18 @@ export class SwidgeExecutionError extends RhinofiProtocolError {
    * Creates a new swidge execution error.
    *
    * @param {string} message - The human-readable error message.
-   * @param {{ cause?: unknown, code?: string }} [options] - Error options.
+   * @param {Object} [details] - Optional error details.
+   * @param {unknown} [details.cause] - The error's cause.
+   * @param {string} [details.code] - The rhino.fi failure code.
    */
-  constructor (message, options = {}) {
-    super(message, options.cause !== undefined ? { cause: options.cause } : undefined)
+  constructor (message, details = {}) {
+    super(message, details.cause !== undefined ? { cause: details.cause } : undefined)
 
     /**
      * The rhino.fi failure type (e.g. 'InsufficientBalance'), when known.
      *
      * @type {string | undefined}
      */
-    this.code = options.code
+    this.code = details.code
   }
 }

@@ -266,14 +266,12 @@ export default class RhinofiProtocol extends SwidgeProtocol {
       throw swidgeExecutionError('rhino.fi did not submit a deposit for the swidge.', bridgeError)
     }
 
-    /** @type {SwidgeTransaction[]} */
     const transactions = []
     if (approvalTxHash) {
       transactions.push({ hash: approvalTxHash, chain: route.from.key, type: 'approval' })
     }
     transactions.push({ hash: depositTxHash, chain: route.from.key, type: 'source' })
 
-    /** @type {SwidgeResult} */
     return {
       id: prep.quote.quoteId,
       hash: depositTxHash,
@@ -456,7 +454,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
       if (approveResult.type !== 'success') {
         throw swidgeExecutionError('rhino.fi token approval failed.', approveResult.error)
       }
-      const { approvalTxHash } = /** @type {{ approvalTxHash?: string }} */ (approveResult)
+      const { approvalTxHash } = approveResult
       if (approvalTxHash) onApproval(approvalTxHash)
       return approveResult.bridge()
     }

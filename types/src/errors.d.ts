@@ -127,9 +127,11 @@ export class SwidgeExecutionError extends RhinofiProtocolError {
      * Creates a new swidge execution error.
      *
      * @param {string} message - The human-readable error message.
-     * @param {{ cause?: unknown, code?: string }} [options] - Error options.
+     * @param {Object} [details] - Optional error details.
+     * @param {unknown} [details.cause] - The error's cause.
+     * @param {string} [details.code] - The rhino.fi failure code.
      */
-    constructor(message: string, options?: {
+    constructor(message: string, details?: {
         cause?: unknown;
         code?: string;
     });
