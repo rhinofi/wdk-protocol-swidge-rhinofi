@@ -69,6 +69,12 @@ and resolves as soon as that transaction is broadcast, returning
 it with `getSwidgeStatus(id)`. The returned `id` is the rhino.fi quote/commitment
 id.
 
+## Caching
+
+The rhino.fi chain config and swap-token lists are cached for `configTtlMs`
+(default 60s), so they're fetched once and reused across calls rather than
+re-requested each time. Set `configTtlMs` to `0` to always fetch fresh.
+
 ## Supported chains & tokens
 
 `getSupportedChains()` / `getSupportedTokens()` reflect the live rhino.fi config.

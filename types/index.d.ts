@@ -1,12 +1,10 @@
 export { ISwidgeProtocol } from "@tetherto/wdk-wallet/protocols";
-export { RhinofiProtocolError, AccountRequiredError, ConfigurationError, UnsupportedChainError, UnsupportedTokenError, FeeLimitExceededError, UnknownOperationError, SwidgeExecutionError } from "./src/errors.js";
 export type SwapOptions = import("@tetherto/wdk-wallet/protocols").SwapOptions;
 export type SwapResult = import("@tetherto/wdk-wallet/protocols").SwapResult;
 export type BridgeOptions = import("@tetherto/wdk-wallet/protocols").BridgeOptions;
 export type BridgeResult = import("@tetherto/wdk-wallet/protocols").BridgeResult;
 export type SwidgeStatus = import("@tetherto/wdk-wallet/protocols").SwidgeStatus;
 export type SwidgeFeeType = import("@tetherto/wdk-wallet/protocols").SwidgeFeeType;
-export type SwidgeProtocolConfig = import("@tetherto/wdk-wallet/protocols").SwidgeProtocolConfig;
 export type SwidgeOptions = import("@tetherto/wdk-wallet/protocols").SwidgeOptions;
 export type SwidgeCommonOptions = import("@tetherto/wdk-wallet/protocols").SwidgeCommonOptions;
 export type SwidgeExactInOptions = import("@tetherto/wdk-wallet/protocols").SwidgeExactInOptions;
@@ -22,3 +20,4 @@ export type SwidgeSupportedToken = import("@tetherto/wdk-wallet/protocols").Swid
 export type SwidgeSupportedTokensOptions = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedTokensOptions;
 export type RhinofiProtocolConfig = import("./src/rhinofi-protocol.js").RhinofiProtocolConfig;
 export { default, default as RhinofiProtocol } from "./src/rhinofi-protocol.js";
+export { RhinofiProtocolError, AccountRequiredError, ConfigurationError, UnsupportedChainError, UnsupportedTokenError, FeeLimitExceededError, UnknownOperationError, SwidgeExecutionError } from "./src/errors.js";
