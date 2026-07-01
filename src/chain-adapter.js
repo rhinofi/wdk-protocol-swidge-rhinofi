@@ -14,33 +14,40 @@
 
 'use strict'
 
-import { UnsupportedChainError } from './errors.js'
+import { RhinofiProtocolError, UnsupportedChainError } from './errors.js'
 
-/** @typedef {import('@tetherto/wdk-wallet').IWalletAccount} IWalletAccount */
-/** @typedef {import('@tetherto/wdk-wallet').IWalletAccountReadOnly} IWalletAccountReadOnly */
-/** @typedef {import('ethers').Provider} Provider */
+/** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountEvm} WalletAccountEvm */
+/** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
+/** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountEvmErc4337} WalletAccountEvmErc4337 */
+/** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountReadOnlyEvmErc4337} WalletAccountReadOnlyEvmErc4337 */
+/** @typedef {WalletAccountEvm | WalletAccountReadOnlyEvm | WalletAccountEvmErc4337 | WalletAccountReadOnlyEvmErc4337} SupportedAccount */
 /** @typedef {import('@rhino.fi/sdk').ChainConfig} ChainConfig */
 /** @typedef {import('@rhino.fi/sdk').ChainAdapter} ChainAdapter */
 
 /**
  * Reads the chain the account is connected to, which is the source chain for a
- * swidge (the WDK `SwidgeOptions` carry only a destination `toChain`). The
- * generic WDK account interface exposes no network accessor, so this reaches
- * into the EVM account's ethers provider — the same one it signs with. Other
- * ecosystems, and EVM accounts constructed without a provider, return
- * `undefined` (the caller then has no source chain and must error).
+ * swidge (the WDK `SwidgeOptions` carry only a destination `toChain`). The WDK
+ * account interface exposes no network accessor, so this reads the provider the
+ * account signs with. EVM accounts expose an ethers provider (`getNetwork`);
+ * ERC-4337 accounts expose an EIP-1193 provider (`request`) — the chain id is
+ * read through whichever this is. An account without a provider returns `null`
+ * (the caller then has no source chain and must error).
  *
- * @param {IWalletAccount | IWalletAccountReadOnly | undefined} account - The WDK wallet account.
- * @returns {Promise<number | undefined>} The connected chain id (rhino `networkId`), or `undefined` if not discoverable.
+ * @internal
+ * @param {SupportedAccount | undefined} account - The WDK wallet account.
+ * @returns {Promise<number | null>} The connected chain id (rhino `networkId`), or `null` if not discoverable.
+ * @throws {RhinofiProtocolError} If the account has a provider but reading its network fails (e.g. a connection error).
  */
 export const getAccountNetworkId = async (account) => {
-  const provider = /** @type {{ _provider?: Provider }} */ (account)?._provider
-  if (!provider || typeof provider.getNetwork !== 'function') return undefined
+  const provider = account?._provider
+  if (!provider) return null
   try {
-    const { chainId } = await provider.getNetwork()
+    const chainId = typeof provider.getNetwork === 'function'
+      ? (await provider.getNetwork()).chainId
+      : await provider.request({ method: 'eth_chainId' })
     return Number(chainId)
-  } catch {
-    return undefined
+  } catch (cause) {
+    throw new RhinofiProtocolError('Failed to read the source chain from the wallet account provider.', { cause })
   }
 }
 
@@ -50,7 +57,8 @@ export const getAccountNetworkId = async (account) => {
  * factory, which broadcasts via `account.sendTransaction` — keys never leave the
  * account. The per-ecosystem SDK adapter is imported lazily.
  *
- * @param {IWalletAccount} account - The WDK wallet account (source-chain signer).
+ * @internal
+ * @param {WalletAccountEvm | WalletAccountEvmErc4337} account - The WDK wallet account (source-chain signer).
  * @param {ChainConfig} chainConfig - The rhino.fi chain config entry for the source chain.
  * @returns {Promise<ChainAdapter>} The rhino.fi chain adapter.
  * @throws {UnsupportedChainError} If the source chain's ecosystem is not supported.

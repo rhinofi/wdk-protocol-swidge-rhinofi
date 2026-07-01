@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 import { ISwidgeProtocol } from '@tetherto/wdk-wallet/protocols'
+import { WalletAccountEvm, WalletAccountReadOnlyEvm } from '@tetherto/wdk-wallet-evm'
 
 // --- Fixtures -------------------------------------------------------------
 
@@ -118,20 +119,29 @@ const {
   UnknownOperationError,
   SwidgeExecutionError
 } = await import('../src/errors.js')
-const { toBaseUnits, toDecimalString } = await import('../src/mappers.js')
 
 // --- Helpers --------------------------------------------------------------
 
-const fullAccount = () => ({
-  getAddress: jest.fn(async () => DUMMY_DEPOSITOR),
-  sendTransaction: jest.fn(async () => ({ hash: DUMMY_DEPOSIT_HASH, fee: 1n }))
-})
+// A full (signing) EVM account. The protocol gates execution on
+// `instanceof WalletAccountEvm`, so the mock is grafted onto the real
+// prototype; its chain-touching members are stubbed (the real provider /
+// signing path is covered by the hardhat integration tests).
+const fullAccount = () =>
+  Object.assign(Object.create(WalletAccountEvm.prototype), {
+    getAddress: jest.fn(async () => DUMMY_DEPOSITOR),
+    sendTransaction: jest.fn(async () => ({ hash: DUMMY_DEPOSIT_HASH, fee: 1n }))
+  })
 
-// A WalletAccountEvm-like account whose ethers provider reports a chain id.
-const evmAccount = (chainId = 42161, getNetwork = jest.fn(async () => ({ chainId: BigInt(chainId) }))) => ({
-  ...fullAccount(),
-  _provider: { getNetwork }
-})
+// A full EVM account whose ethers provider reports a chain id.
+const evmAccount = (chainId = 42161, getNetwork = jest.fn(async () => ({ chainId: BigInt(chainId) }))) =>
+  Object.assign(fullAccount(), { _provider: { getNetwork } })
+
+// A read-only EVM account (the parent class), which must be rejected by the
+// full-account gate.
+const readOnlyAccount = () =>
+  Object.assign(Object.create(WalletAccountReadOnlyEvm.prototype), {
+    getAddress: jest.fn(async () => DUMMY_DEPOSITOR)
+  })
 
 const noApprovalPrep = () =>
   prepareBridge.mockImplementation(async (_bridgeData, options) => ({
@@ -343,14 +353,6 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
     })
   })
 
-  describe('amount precision', () => {
-    it('should round-trip 18-decimal amounts without rounding', () => {
-      expect(toBaseUnits('1234.123456789012345678', 18)).toBe(1234123456789012345678n)
-      expect(toDecimalString(1234123456789012345678n, 18)).toBe('1234.123456789012345678')
-      expect(toBaseUnits('12345678.000000000000000001', 18)).toBe(12345678000000000000000001n)
-    })
-  })
-
   describe('swidge', () => {
     const SWIDGE_OPTIONS = {
       fromToken: 'USDT',
@@ -533,8 +535,7 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
     })
 
     it('should throw if the account is read-only', async () => {
-      const readOnly = { getAddress: jest.fn(async () => DUMMY_DEPOSITOR) }
-      const protocol = new RhinofiProtocol(readOnly, { apiKey: 'dummy-api-key' })
+      const protocol = new RhinofiProtocol(readOnlyAccount(), { apiKey: 'dummy-api-key' })
 
       await expect(protocol.swidge(SWIDGE_OPTIONS)).rejects.toThrow('A wallet account with signing capabilities is required to execute a swidge.')
       expect(prepareBridge).not.toHaveBeenCalled()

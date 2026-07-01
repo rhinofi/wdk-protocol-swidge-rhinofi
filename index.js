@@ -20,7 +20,6 @@
 
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeStatus} SwidgeStatus */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeFeeType} SwidgeFeeType */
-/** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeProtocolConfig} SwidgeProtocolConfig */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeOptions} SwidgeOptions */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeCommonOptions} SwidgeCommonOptions */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeExactInOptions} SwidgeExactInOptions */

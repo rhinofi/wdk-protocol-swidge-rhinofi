@@ -7,34 +7,34 @@ export class RhinofiProtocolError extends Error {
      * Creates a new rhinofi protocol error.
      *
      * @param {string} message - The human-readable error message.
-     * @param {{ cause?: unknown }} [options] - Optional error options (e.g. the underlying cause).
+     * @param {Object} [details] - Optional error details.
+     * @param {unknown} [details.cause] - The error's cause.
      */
-    constructor(message: string, options?: {
+    constructor(message: string, details?: {
         cause?: unknown;
     });
 }
 /**
  * Thrown when an operation requires a full (signing) wallet account but the
  * protocol was constructed without one, or with a read-only account.
- * This is a developer error.
  */
 export class AccountRequiredError extends RhinofiProtocolError {
     /**
      * Creates a new account-required error.
      *
-     * @param {string} [operation] - The operation that required the account (default: 'execute a swidge').
+     * @param {string} operation - The operation that required the account (e.g. 'execute a swidge').
      */
-    constructor(operation?: string);
+    constructor(operation: string);
 }
 /**
  * Thrown when the protocol is missing required configuration, such as the
- * rhino.fi API key. This is a developer error.
+ * rhino.fi API key.
  */
 export class ConfigurationError extends RhinofiProtocolError {
 }
 /**
  * Thrown when a chain is not supported by the rhino.fi protocol (or is not a
- * valid source chain for the provided account). User-actionable.
+ * valid source chain for the provided account).
  */
 export class UnsupportedChainError extends RhinofiProtocolError {
     /**
@@ -51,7 +51,7 @@ export class UnsupportedChainError extends RhinofiProtocolError {
     chain: string | number;
 }
 /**
- * Thrown when a token is not supported on the given chain. User-actionable.
+ * Thrown when a token is not supported on the given chain.
  */
 export class UnsupportedTokenError extends RhinofiProtocolError {
     /**
@@ -76,7 +76,7 @@ export class UnsupportedTokenError extends RhinofiProtocolError {
 }
 /**
  * Thrown by {@link swidge} when the quoted fees exceed the configured
- * `maxNetworkFeeBps` / `maxProtocolFeeBps` thresholds. User-actionable.
+ * `maxNetworkFeeBps` / `maxProtocolFeeBps` thresholds.
  */
 export class FeeLimitExceededError extends RhinofiProtocolError {
     /**
@@ -111,15 +111,6 @@ export class FeeLimitExceededError extends RhinofiProtocolError {
  */
 export class UnknownOperationError extends RhinofiProtocolError {
     /**
-     * Creates a new unknown-operation error.
-     *
-     * @param {string} id - The unknown swidge identifier.
-     * @param {{ cause?: unknown }} [options] - Optional error options.
-     */
-    constructor(id: string, options?: {
-        cause?: unknown;
-    });
-    /**
      * The unknown swidge identifier.
      *
      * @type {string}
@@ -136,9 +127,11 @@ export class SwidgeExecutionError extends RhinofiProtocolError {
      * Creates a new swidge execution error.
      *
      * @param {string} message - The human-readable error message.
-     * @param {{ cause?: unknown, code?: string }} [options] - Error options.
+     * @param {Object} [details] - Optional error details.
+     * @param {unknown} [details.cause] - The error's cause.
+     * @param {string} [details.code] - The rhino.fi failure code.
      */
-    constructor(message: string, options?: {
+    constructor(message: string, details?: {
         cause?: unknown;
         code?: string;
     });
@@ -149,53 +142,3 @@ export class SwidgeExecutionError extends RhinofiProtocolError {
      */
     code: string | undefined;
 }
-export function describeRhinoError(error: unknown): RhinoErrorDescription;
-export function swidgeExecutionError(baseMessage: string, rhinoError: unknown): SwidgeExecutionError;
-/**
- * The shape this module reads from a rhino.fi SDK error to derive a code/detail.
- */
-export type RhinoErrorLike = {
-    /**
-     * - A code set by this module's own errors.
-     */
-    code?: string;
-    /**
-     * - The rhino.fi `BridgeError` discriminator.
-     */
-    type?: string;
-    /**
-     * - The API error tag.
-     */
-    _tag?: string;
-    /**
-     * - A wrapped underlying error.
-     */
-    originalError?: {
-        _tag?: string;
-    };
-    /**
-     * - The available balance (InsufficientBalance).
-     */
-    availableBalance?: bigint;
-    /**
-     * - The unsupported chains.
-     */
-    chains?: string[];
-    /**
-     * - The unsupported tokens.
-     */
-    tokens?: string[];
-};
-/**
- * The stable code and human-readable detail derived from a rhino.fi SDK error.
- */
-export type RhinoErrorDescription = {
-    /**
-     * - The stable rhino.fi failure code (e.g. 'InsufficientBalance').
-     */
-    code?: string;
-    /**
-     * - A human-readable detail describing the failure.
-     */
-    detail?: string;
-};
