@@ -22,7 +22,7 @@
     "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --runInBand tests/integration"
   },
   "dependencies": {
-    "@rhino.fi/sdk": "1.13.0",
+    "@rhino.fi/sdk": "1.13.1",
     "@tetherto/wdk-wallet": "1.0.0-beta.11",
     "@tetherto/wdk-wallet-evm": "1.0.0-beta.13",
     "@tetherto/wdk-wallet-evm-erc-4337": "1.0.0-beta.9",
