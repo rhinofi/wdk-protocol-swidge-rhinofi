@@ -1,6 +1,6 @@
 {
   "name": "@rhino.fi/wdk-protocol-swidge-rhinofi",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "WDK module to perform cross-chain swaps via the Rhino.fi protocol.",
   "keywords": [
     "wdk",
