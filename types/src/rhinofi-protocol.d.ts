@@ -11,18 +11,18 @@ export default class RhinofiProtocol extends SwidgeProtocol {
      * Creates a new read-only rhinofi swidge protocol.
      *
      * @overload
-     * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337} account - The wallet account to use to interact with the protocol.
+     * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337 | WalletAccountReadOnlyTron} account - The wallet account to use to interact with the protocol.
      * @param {RhinofiProtocolConfig} config - The rhinofi protocol configuration.
      */
-    constructor(account: WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337, config: RhinofiProtocolConfig);
+    constructor(account: WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337 | WalletAccountReadOnlyTron, config: RhinofiProtocolConfig);
     /**
      * Creates a new rhinofi swidge protocol.
      *
      * @overload
-     * @param {WalletAccountEvm | WalletAccountEvmErc4337} account - The wallet account to use to interact with the protocol.
+     * @param {WalletAccountEvm | WalletAccountEvmErc4337 | WalletAccountTron} account - The wallet account to use to interact with the protocol.
      * @param {RhinofiProtocolConfig} config - The rhinofi protocol configuration.
      */
-    constructor(account: WalletAccountEvm | WalletAccountEvmErc4337, config: RhinofiProtocolConfig);
+    constructor(account: WalletAccountEvm | WalletAccountEvmErc4337 | WalletAccountTron, config: RhinofiProtocolConfig);
     /** @private */
     private _sdk;
     /** @private */
@@ -31,6 +31,45 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     private _cache;
     /** @private */
     private _cached;
+    /**
+     * Quotes the estimated costs and output of a swidge operation.
+     *
+     * The returned quote carries the underlying rhino.fi quote on its `quote`
+     * field. Pass that value back to {@link swidge} (as `config.quote`) to execute
+     * against this exact quote instead of re-fetching — so the amounts quoted here
+     * are the amounts that execute, even if the market moves in between. rhino.fi
+     * quotes expire, so a stale quote will be rejected at execution; re-quote when
+     * that happens. Callers that quote frequently (e.g. on every keystroke) should
+     * throttle/debounce these calls themselves.
+     *
+     * @param {SwidgeOptions} options - The swidge options.
+     * @returns {Promise<SwidgeQuote & { quote: object }>} The quoted swidge details, plus the raw rhino.fi quote to reuse.
+     * @throws {RhinofiProtocolError} If the source chain cannot be determined from the account.
+     * @throws {UnsupportedChainError} If the source or destination chain is unsupported.
+     * @throws {UnsupportedTokenError} If a token is unsupported on its chain.
+     * @throws {SwidgeExecutionError} If the rhino.fi quote request fails.
+     */
+    quoteSwidge(options: SwidgeOptions): Promise<SwidgeQuote & {
+        quote: object;
+    }>;
+    /**
+     * Executes a swidge operation. Submits the source-chain deposit (after any
+     * required token approval) and returns as soon as the deposit transaction is
+     * broadcast; use {@link getSwidgeStatus} to track the operation to completion.
+     *
+     * @param {SwidgeOptions} options - The swidge options.
+     * @param {Pick<RhinofiProtocolConfig, 'maxNetworkFeeBps' | 'maxProtocolFeeBps'> & { quote?: object }} [config] - Optional per-call configuration (overrides constructor config). Pass `quote` (the `quote` field from a {@link quoteSwidge} result) to execute against that exact quote instead of re-fetching.
+     * @returns {Promise<SwidgeResult>} The swidge execution result.
+     * @throws {AccountRequiredError} If no account, or a read-only account, was given at construction.
+     * @throws {RhinofiProtocolError} If the source chain cannot be determined from the account.
+     * @throws {UnsupportedChainError} If the source or destination chain is unsupported.
+     * @throws {UnsupportedTokenError} If a token is unsupported on its chain.
+     * @throws {FeeLimitExceededError} If the quoted fees exceed the configured maximums.
+     * @throws {SwidgeExecutionError} If the underlying rhino.fi operation fails.
+     */
+    swidge(options: SwidgeOptions, config?: Pick<RhinofiProtocolConfig, "maxNetworkFeeBps" | "maxProtocolFeeBps"> & {
+        quote?: object;
+    }): Promise<SwidgeResult>;
     /** @private */
     private _call;
     /** @private */
@@ -54,6 +93,8 @@ export type WalletAccountEvm = import("@tetherto/wdk-wallet-evm").WalletAccountE
 export type WalletAccountReadOnlyEvm = import("@tetherto/wdk-wallet-evm").WalletAccountReadOnlyEvm;
 export type WalletAccountEvmErc4337 = import("@tetherto/wdk-wallet-evm-erc-4337").WalletAccountEvmErc4337;
 export type WalletAccountReadOnlyEvmErc4337 = import("@tetherto/wdk-wallet-evm-erc-4337").WalletAccountReadOnlyEvmErc4337;
+export type WalletAccountTron = import("@tetherto/wdk-wallet-tron").WalletAccountTron;
+export type WalletAccountReadOnlyTron = import("@tetherto/wdk-wallet-tron").WalletAccountReadOnlyTron;
 export type SwidgeOptions = import("@tetherto/wdk-wallet/protocols").SwidgeOptions;
 export type SwidgeQuote = import("@tetherto/wdk-wallet/protocols").SwidgeQuote;
 export type SwidgeResult = import("@tetherto/wdk-wallet/protocols").SwidgeResult;
@@ -95,3 +136,4 @@ export type RhinofiProtocolConfig = {
 import { SwidgeProtocol } from '@tetherto/wdk-wallet/protocols';
 import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm';
 import { WalletAccountEvmErc4337 } from '@tetherto/wdk-wallet-evm-erc-4337';
+import { WalletAccountTron } from '@tetherto/wdk-wallet-tron';

@@ -9,6 +9,8 @@ cross-chain swaps and bridges through the [rhino.fi](https://rhino.fi) protocol.
 
 ```bash
 npm install @rhino.fi/wdk-protocol-swidge-rhinofi @tetherto/wdk-wallet-evm
+# add the wallet module for each source ecosystem you sign from, e.g. Tron:
+npm install @tetherto/wdk-wallet-tron
 ```
 
 ## Usage
@@ -26,22 +28,20 @@ const rhinofi = new RhinofiProtocol(account, {
 const chains = await rhinofi.getSupportedChains()
 const tokens = await rhinofi.getSupportedTokens({ fromChain: 'ARBITRUM' })
 
-// Quote (non-binding). The source chain is taken from `account` (see note below).
-const quote = await rhinofi.quoteSwidge({
+// Quote. The source chain is taken from `account` (see note below).
+const options = {
   fromToken: 'USDT',
   toToken: 'USDC',
   toChain: 'BASE',
   fromTokenAmount: 1_000_000n // exact-in; use `toTokenAmount` for exact-out
-})
+}
+const quote = await rhinofi.quoteSwidge(options)
 
-// Execute. Returns as soon as the source deposit is broadcast.
-const result = await rhinofi.swidge({
-  fromToken: 'USDT',
-  toToken: 'USDC',
-  toChain: 'BASE',
-  fromTokenAmount: 1_000_000n,
-  recipient: '0x…' // defaults to the account address
-})
+// Execute. Pass `quote.quote` to bridge against the exact quote shown to the
+// user instead of re-fetching — so the amounts can't move in between. Omit it to
+// fetch a fresh quote at execution time. Returns once the source deposit is
+// broadcast.
+const result = await rhinofi.swidge(options, { quote: quote.quote })
 
 // Poll to completion.
 const status = await rhinofi.getSwidgeStatus(result.id)
@@ -85,9 +85,9 @@ provides an on-chain adapter:
 | Ecosystem | As source | Notes |
 | --- | --- | --- |
 | EVM | ✅ Supported | `@tetherto/wdk-wallet-evm` (incl. ERC-4337); signs via `account.sendTransaction` |
+| Tron | ✅ Supported | `@tetherto/wdk-wallet-tron`; signs the TRC-20 approval + deposit via `account.sendTransaction` |
 | Solana | 🔜 Planned | |
 | TON | 🔜 Planned |  |
-| Tron | 🔜 Planned |  |
 
 ## Status mapping
 
@@ -137,8 +137,9 @@ All errors extend `RhinofiProtocolError`:
 
 Inherited legacy delegations `swap` / `quoteSwap` / `bridge` / `quoteBridge`
 map onto `swidge` / `quoteSwidge`. Their option shapes carry no source chain, so
-it must be derivable from the account (an EVM account connected to a provider);
-otherwise they throw `RhinofiProtocolError`.
+it must be derivable from the account (an EVM account connected to a provider,
+or a Tron account connected to a `TronWeb` client); otherwise they throw
+`RhinofiProtocolError`.
 
 ## Examples
 

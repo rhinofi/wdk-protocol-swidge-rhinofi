@@ -43,7 +43,7 @@ export class AccountRequiredError extends RhinofiProtocolError {
    * @param {string} operation - The operation that required the account (e.g. 'execute a swidge').
    */
   constructor (operation) {
-    super(`A wallet account with signing capabilities is required to ${operation}. Construct RhinofiProtocol with a full WalletAccountEvm or WalletAccountEvmErc4337.`)
+    super(`A wallet account with signing capabilities is required to ${operation}. Construct RhinofiProtocol with a full WalletAccountEvm, WalletAccountEvmErc4337 or WalletAccountTron.`)
   }
 }
 

@@ -17,6 +17,7 @@
 import { SwidgeProtocol } from '@tetherto/wdk-wallet/protocols'
 import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
 import { WalletAccountEvmErc4337 } from '@tetherto/wdk-wallet-evm-erc-4337'
+import { WalletAccountTron } from '@tetherto/wdk-wallet-tron'
 import { RhinoSdk } from '@rhino.fi/sdk'
 
 import { getChainAdapterForAccount, getAccountNetworkId } from './chain-adapter.js'
@@ -45,6 +46,8 @@ import {
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
 /** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountEvmErc4337} WalletAccountEvmErc4337 */
 /** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountReadOnlyEvmErc4337} WalletAccountReadOnlyEvmErc4337 */
+/** @typedef {import('@tetherto/wdk-wallet-tron').WalletAccountTron} WalletAccountTron */
+/** @typedef {import('@tetherto/wdk-wallet-tron').WalletAccountReadOnlyTron} WalletAccountReadOnlyTron */
 
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeOptions} SwidgeOptions */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeQuote} SwidgeQuote */
@@ -103,7 +106,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
    * Creates a new read-only rhinofi swidge protocol.
    *
    * @overload
-   * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337} account - The wallet account to use to interact with the protocol.
+   * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337 | WalletAccountReadOnlyTron} account - The wallet account to use to interact with the protocol.
    * @param {RhinofiProtocolConfig} config - The rhinofi protocol configuration.
    */
 
@@ -111,7 +114,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
    * Creates a new rhinofi swidge protocol.
    *
    * @overload
-   * @param {WalletAccountEvm | WalletAccountEvmErc4337} account - The wallet account to use to interact with the protocol.
+   * @param {WalletAccountEvm | WalletAccountEvmErc4337 | WalletAccountTron} account - The wallet account to use to interact with the protocol.
    * @param {RhinofiProtocolConfig} config - The rhinofi protocol configuration.
    */
   constructor (account, config = {}) {
@@ -161,11 +164,17 @@ export default class RhinofiProtocol extends SwidgeProtocol {
 
   /**
    * Quotes the estimated costs and output of a swidge operation.
-   * Returns a non-binding quote; the actual execution is performed
-   * by {@link swidge}.
+   *
+   * The returned quote carries the underlying rhino.fi quote on its `quote`
+   * field. Pass that value back to {@link swidge} (as `config.quote`) to execute
+   * against this exact quote instead of re-fetching — so the amounts quoted here
+   * are the amounts that execute, even if the market moves in between. rhino.fi
+   * quotes expire, so a stale quote will be rejected at execution; re-quote when
+   * that happens. Callers that quote frequently (e.g. on every keystroke) should
+   * throttle/debounce these calls themselves.
    *
    * @param {SwidgeOptions} options - The swidge options.
-   * @returns {Promise<SwidgeQuote>} The quoted swidge details.
+   * @returns {Promise<SwidgeQuote & { quote: object }>} The quoted swidge details, plus the raw rhino.fi quote to reuse.
    * @throws {RhinofiProtocolError} If the source chain cannot be determined from the account.
    * @throws {UnsupportedChainError} If the source or destination chain is unsupported.
    * @throws {UnsupportedTokenError} If a token is unsupported on its chain.
@@ -175,24 +184,34 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     const route = await this._resolveRoute(options)
     const { amount, mode } = this._resolveAmount(options, route)
 
+    const depositor = await this._account.getAddress()
+    const recipient = options.recipient ?? depositor
+
     const quote = await this._call(
-      this._sdk.api.bridge.getSwapPublicQuote({
+      this._sdk.api.bridge.getSwapUserQuote({
         chainIn: route.from.key,
         chainOut: route.to.key,
         tokenIn: route.fromToken.token,
         tokenOut: route.toToken.token,
         amount,
-        mode
+        mode,
+        depositor,
+        recipient,
+        ...(options.refundAddress ? { refundAddress: options.refundAddress } : {})
       }),
       'Failed to fetch a rhino.fi quote.'
     )
 
-    return mapQuote(quote, {
-      fromToken: route.fromToken.token,
-      fromDecimals: route.fromToken.decimals,
-      toDecimals: route.toToken.decimals,
-      fromChain: route.from.key
-    })
+    return {
+      ...mapQuote(quote, {
+        fromToken: route.fromToken.token,
+        fromDecimals: route.fromToken.decimals,
+        toDecimals: route.toToken.decimals,
+        fromChain: route.from.key,
+        toChain: route.to.key
+      }),
+      quote
+    }
   }
 
   /**
@@ -201,7 +220,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
    * broadcast; use {@link getSwidgeStatus} to track the operation to completion.
    *
    * @param {SwidgeOptions} options - The swidge options.
-   * @param {Pick<RhinofiProtocolConfig, 'maxNetworkFeeBps' | 'maxProtocolFeeBps'>} [config] - Optional per-call configuration (overrides constructor config).
+   * @param {Pick<RhinofiProtocolConfig, 'maxNetworkFeeBps' | 'maxProtocolFeeBps'> & { quote?: object }} [config] - Optional per-call configuration (overrides constructor config). Pass `quote` (the `quote` field from a {@link quoteSwidge} result) to execute against that exact quote instead of re-fetching.
    * @returns {Promise<SwidgeResult>} The swidge execution result.
    * @throws {AccountRequiredError} If no account, or a read-only account, was given at construction.
    * @throws {RhinofiProtocolError} If the source chain cannot be determined from the account.
@@ -212,6 +231,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
    */
   async swidge (options, config) {
     const account = this._requireFullAccount('execute a swidge')
+    const { quote: providedQuote, ...callConfig } = config ?? {}
     const route = await this._resolveRoute(options)
     const { amount, mode } = this._resolveAmount(options, route)
 
@@ -234,7 +254,8 @@ export default class RhinofiProtocol extends SwidgeProtocol {
     const prep = await this._sdk.prepareBridge(bridgeData, {
       getChainAdapter: (chainConfig) => getChainAdapterForAccount(account, chainConfig),
       hooks: { onBridgeStatusChange },
-      bridgeConfig: route.config
+      bridgeConfig: route.config,
+      ...(providedQuote ? { quote: providedQuote } : {})
     })
     if (prep.type === 'error') {
       throw swidgeExecutionError('rhino.fi failed to prepare the swidge.', prep.error)
@@ -244,9 +265,10 @@ export default class RhinofiProtocol extends SwidgeProtocol {
       fromToken: route.fromToken.token,
       fromDecimals: route.fromToken.decimals,
       toDecimals: route.toToken.decimals,
-      fromChain: route.from.key
+      fromChain: route.from.key,
+      toChain: route.to.key
     })
-    const mergedConfig = { ...this._config, ...config }
+    const mergedConfig = { ...this._config, ...callConfig }
     this._enforceFeeLimits(mapped.fees, mapped.fromTokenAmount, mergedConfig)
 
     let approvalTxHash
@@ -381,7 +403,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
   /** @private */
   _requireFullAccount (operation) {
     const account = this._account
-    if (!account || !(account instanceof WalletAccountEvm || account instanceof WalletAccountEvmErc4337)) {
+    if (!account || !(account instanceof WalletAccountEvm || account instanceof WalletAccountEvmErc4337 || account instanceof WalletAccountTron)) {
       throw new AccountRequiredError(operation)
     }
     return account
