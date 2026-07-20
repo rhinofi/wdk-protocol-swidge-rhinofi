@@ -15,7 +15,7 @@
 'use strict'
 
 import { RhinofiProtocolError, UnsupportedChainError } from './errors.js'
-import { WalletAccountReadOnlyTron } from '@tetherto/wdk-wallet-tron'
+import { isTronAccount } from './account-type.js'
 
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountEvm} WalletAccountEvm */
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
@@ -46,7 +46,7 @@ const TRON_CHAIN_KEY = 'TRON'
  * @throws {RhinofiProtocolError} If the account has a provider but reading its network fails (e.g. a connection error).
  */
 export const getAccountNetworkId = async (account) => {
-  if (account instanceof WalletAccountReadOnlyTron) {
+  if (isTronAccount(account)) {
     return account._tronWeb ? TRON_CHAIN_KEY : null
   }
   const provider = account?._provider

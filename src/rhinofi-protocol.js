@@ -15,12 +15,10 @@
 'use strict'
 
 import { SwidgeProtocol } from '@tetherto/wdk-wallet/protocols'
-import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
-import { WalletAccountEvmErc4337 } from '@tetherto/wdk-wallet-evm-erc-4337'
-import { WalletAccountTron } from '@tetherto/wdk-wallet-tron'
 import { RhinoSdk } from '@rhino.fi/sdk'
 
 import { getChainAdapterForAccount, getAccountNetworkId } from './chain-adapter.js'
+import { isFullAccount } from './account-type.js'
 import {
   RhinofiProtocolError,
   AccountRequiredError,
@@ -403,7 +401,7 @@ export default class RhinofiProtocol extends SwidgeProtocol {
   /** @private */
   _requireFullAccount (operation) {
     const account = this._account
-    if (!account || !(account instanceof WalletAccountEvm || account instanceof WalletAccountEvmErc4337 || account instanceof WalletAccountTron)) {
+    if (!isFullAccount(account)) {
       throw new AccountRequiredError(operation)
     }
     return account
