@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 import { ISwidgeProtocol } from '@tetherto/wdk-wallet/protocols'
 import { WalletAccountEvm, WalletAccountReadOnlyEvm } from '@tetherto/wdk-wallet-evm'
+import { WalletAccountTron, WalletAccountReadOnlyTron } from '@tetherto/wdk-wallet-tron'
 
 // --- Fixtures -------------------------------------------------------------
 
@@ -17,6 +18,10 @@ const DUMMY_USDC_ARBITRUM_ADDRESS = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
 const DUMMY_USDC_BASE_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
 const DUMMY_USDC_ETHEREUM_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
 const DUMMY_DAI_BASE_ADDRESS = '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb'
+
+const DUMMY_TRON_DEPOSITOR = 'TQn9Y2khEsLMWD1bkoAExjE9L4rWuT1zpx'
+const DUMMY_USDT_TRON_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+const DUMMY_TRON_TX_HASH = 'a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00'
 
 const DUMMY_CONFIG = {
   ARBITRUM: {
@@ -62,6 +67,19 @@ const DUMMY_CONFIG = {
     enabledDepositAddress: false,
     gasBoostEnabled: false,
     tokens: { USDC: { token: 'USDC', address: DUMMY_USDC_ETHEREUM_ADDRESS, decimals: 6 } }
+  },
+  TRON: {
+    name: 'Tron',
+    type: 'TRON',
+    networkId: '728126428',
+    rpc: 'https://dummy-tron-rpc.url/',
+    contractAddress: 'TT3kgJohTQJNKDUWwTxtRDMHNNWNvNG3i4',
+    nativeTokenName: 'TRX',
+    nativeTokenDecimals: 6,
+    status: 'enabled',
+    enabledDepositAddress: true,
+    gasBoostEnabled: false,
+    tokens: { USDT: { token: 'USDT', address: DUMMY_USDT_TRON_ADDRESS, decimals: 6 } }
   }
 }
 
@@ -87,10 +105,14 @@ const DUMMY_QUOTE = {
   _tag: 'bridgeSwap'
 }
 
-// The SwidgeFee entries mapQuote derives from DUMMY_QUOTE.fees.
+// The committable user quote carries a quoteId; quoteSwidge returns it on `.quote`.
+const DUMMY_USER_QUOTE = { ...DUMMY_QUOTE, quoteId: DUMMY_QUOTE_ID }
+
+// The SwidgeFee entries mapQuote derives from DUMMY_QUOTE.fees (ARBITRUM -> BASE):
+// gasFee is the destination-chain gas (BASE); the protocol fee carries no chain.
 const DUMMY_QUOTE_FEES = [
-  { type: 'network', amount: 5000n, token: 'USDT', chain: 'ARBITRUM', included: true, description: 'Network/gas fee' },
-  { type: 'protocol', amount: 5000n, token: 'USDT', chain: 'ARBITRUM', included: true, description: 'rhino.fi protocol fee' }
+  { type: 'network', amount: 5000n, token: 'USDT', chain: 'BASE', included: true, description: 'Destination-chain gas fee' },
+  { type: 'protocol', amount: 5000n, token: 'USDT', included: true, description: 'rhino.fi protocol fee' }
 ]
 
 // --- Mocks ----------------------------------------------------------------
@@ -98,7 +120,7 @@ const DUMMY_QUOTE_FEES = [
 const bridgeApi = {
   getBridgeConfig: jest.fn(),
   getSwapTokensConfig: jest.fn(),
-  getSwapPublicQuote: jest.fn(),
+  getSwapUserQuote: jest.fn(),
   getBridgeStatus: jest.fn()
 }
 const prepareBridge = jest.fn()
@@ -106,6 +128,7 @@ const RhinoSdk = jest.fn(() => ({ api: { bridge: bridgeApi }, prepareBridge }))
 
 jest.unstable_mockModule('@rhino.fi/sdk', () => ({ RhinoSdk }))
 jest.unstable_mockModule('@rhino.fi/sdk/adapters/evm-wdk', () => ({ getEvmChainAdapterFromWdkAccount: jest.fn(() => ({ networkId: '42161' })) }))
+jest.unstable_mockModule('@rhino.fi/sdk/adapters/tron-wdk', () => ({ getTronChainAdapterFromWdkAccount: jest.fn(() => ({ networkId: '728126428' })) }))
 
 const indexModule = await import('../index.js')
 const RhinofiProtocol = indexModule.default
@@ -143,6 +166,22 @@ const readOnlyAccount = () =>
     getAddress: jest.fn(async () => DUMMY_DEPOSITOR)
   })
 
+// A full (signing) tron account.
+const tronAccount = (connected = true) =>
+  Object.assign(Object.create(WalletAccountTron.prototype), {
+    _tronWeb: connected ? {} : undefined,
+    getAddress: jest.fn(async () => DUMMY_TRON_DEPOSITOR),
+    sendTransaction: jest.fn(async () => ({ hash: DUMMY_TRON_TX_HASH, fee: 1n }))
+  })
+
+// A read-only tron account (the parent class), which must be rejected by the
+// full-account gate.
+const readOnlyTronAccount = () =>
+  Object.assign(Object.create(WalletAccountReadOnlyTron.prototype), {
+    _tronWeb: {},
+    getAddress: jest.fn(async () => DUMMY_TRON_DEPOSITOR)
+  })
+
 const noApprovalPrep = () =>
   prepareBridge.mockImplementation(async (_bridgeData, options) => ({
     type: 'no-approval-needed',
@@ -168,7 +207,7 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
     jest.clearAllMocks()
     bridgeApi.getBridgeConfig.mockResolvedValue({ data: DUMMY_CONFIG })
     bridgeApi.getSwapTokensConfig.mockResolvedValue({ data: [] })
-    bridgeApi.getSwapPublicQuote.mockResolvedValue({ data: DUMMY_QUOTE })
+    bridgeApi.getSwapUserQuote.mockResolvedValue({ data: DUMMY_USER_QUOTE })
     noApprovalPrep()
   })
 
@@ -202,26 +241,29 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
         fromTokenAmount: 1000000n
       })
 
-      expect(bridgeApi.getSwapPublicQuote).toHaveBeenCalledWith({
+      expect(bridgeApi.getSwapUserQuote).toHaveBeenCalledWith({
         chainIn: 'ARBITRUM',
         chainOut: 'BASE',
         tokenIn: 'USDT',
         tokenOut: 'USDC',
         amount: '1',
-        mode: 'pay'
+        mode: 'pay',
+        depositor: DUMMY_DEPOSITOR,
+        recipient: DUMMY_DEPOSITOR
       })
       expect(quote).toEqual({
         fromTokenAmount: 1000000n,
         toTokenAmount: 990000n,
         toTokenAmountMin: 980000n,
         estimatedDuration: 60,
-        fees: DUMMY_QUOTE_FEES
+        fees: DUMMY_QUOTE_FEES,
+        quote: DUMMY_USER_QUOTE
       })
     })
 
     it('should report price impact excluding fees', async () => {
       // 100 USD in, 97 USD out, 2 USD fees -> 1% real impact (not 3%).
-      bridgeApi.getSwapPublicQuote.mockResolvedValue({
+      bridgeApi.getSwapUserQuote.mockResolvedValue({
         data: { ...DUMMY_QUOTE, payAmountUsd: 100, receiveAmountUsd: 97, fees: { ...DUMMY_QUOTE.fees, feeUsd: 2 } }
       })
       const protocol = makeProtocol()
@@ -240,8 +282,8 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(quote.priceImpact).toBeUndefined()
     })
 
-    it('should include source-chain gas in the network fee and derive protocol from the total', async () => {
-      bridgeApi.getSwapPublicQuote.mockResolvedValue({
+    it('should split gas into per-chain network fees and derive the (chainless) protocol fee', async () => {
+      bridgeApi.getSwapUserQuote.mockResolvedValue({
         data: {
           ...DUMMY_QUOTE,
           fees: { fee: '0.011', gasFee: '0.005', sourceGasFee: '0.001', platformFee: '0.003', percentageFee: '0.002' }
@@ -257,8 +299,9 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       })
 
       expect(quote.fees).toEqual([
-        { type: 'network', amount: 6000n, token: 'USDT', chain: 'ARBITRUM', included: true, description: 'Network/gas fee' },
-        { type: 'protocol', amount: 5000n, token: 'USDT', chain: 'ARBITRUM', included: true, description: 'rhino.fi protocol fee' }
+        { type: 'network', amount: 1000n, token: 'USDT', chain: 'ARBITRUM', included: true, description: 'Source-chain swap gas fee' },
+        { type: 'network', amount: 5000n, token: 'USDT', chain: 'BASE', included: true, description: 'Destination-chain gas fee' },
+        { type: 'protocol', amount: 5000n, token: 'USDT', included: true, description: 'rhino.fi protocol fee' }
       ])
     })
 
@@ -272,13 +315,15 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
         toTokenAmount: 990000n
       })
 
-      expect(bridgeApi.getSwapPublicQuote).toHaveBeenCalledWith({
+      expect(bridgeApi.getSwapUserQuote).toHaveBeenCalledWith({
         chainIn: 'ARBITRUM',
         chainOut: 'BASE',
         tokenIn: 'USDT',
         tokenOut: 'USDC',
         amount: '0.99',
-        mode: 'receive'
+        mode: 'receive',
+        depositor: DUMMY_DEPOSITOR,
+        recipient: DUMMY_DEPOSITOR
       })
     })
 
@@ -289,14 +334,41 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       await protocol.quoteSwidge({ fromToken: 'USDC', toToken: 'USDC', toChain: 'ARBITRUM', fromTokenAmount: 1000000n })
 
       expect(getNetwork).toHaveBeenCalled() // getNetwork() takes no arguments
-      expect(bridgeApi.getSwapPublicQuote).toHaveBeenCalledWith({
+      expect(bridgeApi.getSwapUserQuote).toHaveBeenCalledWith({
         chainIn: 'BASE',
         chainOut: 'ARBITRUM',
         tokenIn: 'USDC',
         tokenOut: 'USDC',
         amount: '1',
-        mode: 'pay'
+        mode: 'pay',
+        depositor: DUMMY_DEPOSITOR,
+        recipient: DUMMY_DEPOSITOR
       })
+    })
+
+    it('should derive a tron source chain from a tron account', async () => {
+      const protocol = makeProtocol({}, tronAccount())
+
+      await protocol.quoteSwidge({ fromToken: 'USDT', toToken: 'USDC', toChain: 'BASE', fromTokenAmount: 1000000n })
+
+      expect(bridgeApi.getSwapUserQuote).toHaveBeenCalledWith({
+        chainIn: 'TRON',
+        chainOut: 'BASE',
+        tokenIn: 'USDT',
+        tokenOut: 'USDC',
+        amount: '1',
+        mode: 'pay',
+        depositor: DUMMY_TRON_DEPOSITOR,
+        recipient: DUMMY_TRON_DEPOSITOR
+      })
+    })
+
+    it('should throw if the tron account is not connected to a client', async () => {
+      const protocol = makeProtocol({}, tronAccount(false))
+
+      await expect(
+        protocol.quoteSwidge({ fromToken: 'USDT', toToken: 'USDC', toChain: 'BASE', fromTokenAmount: 1000000n })
+      ).rejects.toThrow('The source chain could not be determined from the account. Connect the wallet account to a provider for its source chain.')
     })
 
     it('should throw ConfigurationError when constructed without an apiKey', () => {
@@ -391,6 +463,24 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
         toTokenAmount: 990000n,
         toTokenAmountMin: 980000n
       })
+    })
+
+    it('should reuse a provided quote (from quoteSwidge) instead of re-fetching', async () => {
+      const protocol = makeProtocol()
+
+      await protocol.swidge(SWIDGE_OPTIONS, { quote: DUMMY_USER_QUOTE })
+
+      const [, options] = prepareBridge.mock.calls[0]
+      expect(options.quote).toBe(DUMMY_USER_QUOTE)
+    })
+
+    it('should not pass a quote to prepareBridge when none is provided', async () => {
+      const protocol = makeProtocol()
+
+      await protocol.swidge(SWIDGE_OPTIONS)
+
+      const [, options] = prepareBridge.mock.calls[0]
+      expect(options.quote).toBeUndefined()
     })
 
     it('should successfully perform a swidge operation (exact-out)', async () => {
@@ -548,6 +638,47 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
     })
   })
 
+  describe('swidge (tron source)', () => {
+    it('should perform a swidge from a tron source chain', async () => {
+      const protocol = makeProtocol({}, tronAccount())
+
+      const result = await protocol.swidge({
+        fromToken: 'USDT',
+        toToken: 'USDC',
+        toChain: 'BASE',
+        fromTokenAmount: 1000000n
+      })
+
+      const [bridgeData] = prepareBridge.mock.calls[0]
+      expect(bridgeData).toEqual({
+        type: 'bridgeSwap',
+        tokenIn: 'USDT',
+        tokenOut: 'USDC',
+        chainIn: 'TRON',
+        chainOut: 'BASE',
+        amount: '1',
+        mode: 'pay',
+        depositor: DUMMY_TRON_DEPOSITOR,
+        recipient: DUMMY_TRON_DEPOSITOR
+      })
+      expect(result.transactions).toEqual([
+        { hash: DUMMY_DEPOSIT_HASH, chain: 'TRON', type: 'source' }
+      ])
+    })
+
+    it('should reject a read-only tron account', async () => {
+      const protocol = new RhinofiProtocol(readOnlyTronAccount(), { apiKey: 'dummy-api-key' })
+
+      await expect(protocol.swidge({
+        fromToken: 'USDT',
+        toToken: 'USDC',
+        toChain: 'BASE',
+        fromTokenAmount: 1000000n
+      })).rejects.toThrow('A wallet account with signing capabilities is required to execute a swidge.')
+      expect(prepareBridge).not.toHaveBeenCalled()
+    })
+  })
+
   describe('getSwidgeStatus', () => {
     it('should successfully return the status of an operation', async () => {
       bridgeApi.getBridgeStatus.mockResolvedValue({
@@ -631,7 +762,8 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
 
       expect(chains).toEqual([
         { id: 'ARBITRUM', name: 'Arbitrum', type: 'evm', nativeToken: 'ETH' },
-        { id: 'BASE', name: 'Base', type: 'evm', nativeToken: 'ETH' }
+        { id: 'BASE', name: 'Base', type: 'evm', nativeToken: 'ETH' },
+        { id: 'TRON', name: 'Tron', type: 'tron', nativeToken: 'TRX' }
       ])
     })
   })
@@ -646,7 +778,8 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(tokens).toEqual([
         { token: 'USDT', chain: 'ARBITRUM', symbol: 'USDT', decimals: 6, address: DUMMY_USDT_ARBITRUM_ADDRESS },
         { token: 'USDC', chain: 'ARBITRUM', symbol: 'USDC', decimals: 6, address: DUMMY_USDC_ARBITRUM_ADDRESS },
-        { token: 'USDC', chain: 'BASE', symbol: 'USDC', decimals: 6, address: DUMMY_USDC_BASE_ADDRESS }
+        { token: 'USDC', chain: 'BASE', symbol: 'USDC', decimals: 6, address: DUMMY_USDC_BASE_ADDRESS },
+        { token: 'USDT', chain: 'TRON', symbol: 'USDT', decimals: 6, address: DUMMY_USDT_TRON_ADDRESS }
       ])
     })
 
@@ -763,7 +896,8 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
 
       expect(chains).toEqual([
         { id: 'ARBITRUM', name: 'Arbitrum', type: 'evm', nativeToken: 'ETH' },
-        { id: 'BASE', name: 'Base', type: 'evm', nativeToken: 'ETH' }
+        { id: 'BASE', name: 'Base', type: 'evm', nativeToken: 'ETH' },
+        { id: 'TRON', name: 'Tron', type: 'tron', nativeToken: 'TRX' }
       ])
       expect(bridgeApi.getBridgeConfig).toHaveBeenCalledTimes(2)
     })

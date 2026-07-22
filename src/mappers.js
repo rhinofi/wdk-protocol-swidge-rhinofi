@@ -39,7 +39,7 @@ const MIN_PRICE_IMPACT = 1e-9
  * @property {string} [fee] - The total fee in token units (authoritative).
  * @property {number} [feeUsd] - The total fee in USD.
  * @property {string} [gasFee] - The destination-chain gas fee.
- * @property {string} [sourceGasFee] - The source-chain gas fee.
+ * @property {string} [sourceGasFee] - The source-chain gas fee, charged only when the route swaps on the source chain.
  */
 
 /**
@@ -93,11 +93,12 @@ const MIN_PRICE_IMPACT = 1e-9
  */
 
 /**
- * The input-token context a fee is denominated in.
+ * The input-token context fees are denominated in.
  *
  * @typedef {Object} FeeContext
  * @property {string} token - The input token symbol (fee denomination).
- * @property {string | number} chain - The chain the fee is charged on.
+ * @property {string | number} fromChain - The source chain (where the source-gas fee is charged).
+ * @property {string | number} toChain - The destination chain (where the destination-gas fee is charged).
  * @property {number} decimals - The input token's number of decimals.
  */
 
@@ -108,7 +109,8 @@ const MIN_PRICE_IMPACT = 1e-9
  * @property {string} fromToken - The source token symbol (fee denomination).
  * @property {number} fromDecimals - The source token's number of decimals.
  * @property {number} toDecimals - The destination token's number of decimals.
- * @property {string | number} fromChain - The source chain identifier (fee chain).
+ * @property {string | number} fromChain - The source chain identifier.
+ * @property {string | number} toChain - The destination chain identifier.
  */
 
 /**
@@ -297,34 +299,49 @@ export const mapSupportedTokens = (config, opts = {}) => {
 
 /**
  * Maps a rhino.fi quote fee breakdown to itemised {@link SwidgeFee} entries,
- * denominated in the input token. Network is gas (`gasFee` + `sourceGasFee`),
- * protocol is the rest of the total (`fee` − gas).
+ * denominated in the input token. The destination-chain gas (`gasFee`) is
+ * reported as a network fee on the destination chain. `sourceGasFee` is only
+ * charged when the route swaps on the source chain (the deposit's own gas is
+ * paid by the account, not deducted here); when present it is reported as a
+ * network fee on the source chain. The rest of the total (`fee` − gas) is the
+ * rhino.fi protocol fee, which is not tied to a chain and so carries no `chain`.
+ * Zero-value items are omitted.
  *
  * @param {RhinoQuoteFees | undefined} fees - The `fees` object from a rhino.fi quote response.
  * @param {FeeContext} ctx - The input-token context the fees are denominated in.
- * @returns {SwidgeFee[]} The itemised fees (always at least the network fee).
+ * @returns {SwidgeFee[]} The itemised fees (only those greater than zero).
  */
-export const mapFees = (fees, { token, chain, decimals }) => {
-  const network = new Decimal(fees?.gasFee ?? '0').add(fees?.sourceGasFee ?? '0')
-  const total = new Decimal(fees?.fee ?? '0')
-  const protocol = total.sub(network)
+export const mapFees = (fees, { token, fromChain, toChain, decimals }) => {
+  const sourceGas = new Decimal(fees?.sourceGasFee ?? '0')
+  const destinationGas = new Decimal(fees?.gasFee ?? '0')
+  const protocol = new Decimal(fees?.fee ?? '0').sub(sourceGas).sub(destinationGas)
 
-  const result = [
-    {
+  const result = []
+  if (sourceGas.gt(0)) {
+    result.push({
       type: 'network',
-      amount: toBaseUnits(network.toFixed(), decimals),
+      amount: toBaseUnits(sourceGas.toFixed(), decimals),
       token,
-      chain,
+      chain: fromChain,
       included: true,
-      description: 'Network/gas fee'
-    }
-  ]
+      description: 'Source-chain swap gas fee'
+    })
+  }
+  if (destinationGas.gt(0)) {
+    result.push({
+      type: 'network',
+      amount: toBaseUnits(destinationGas.toFixed(), decimals),
+      token,
+      chain: toChain,
+      included: true,
+      description: 'Destination-chain gas fee'
+    })
+  }
   if (protocol.gt(0)) {
     result.push({
       type: 'protocol',
       amount: toBaseUnits(protocol.toFixed(), decimals),
       token,
-      chain,
       included: true,
       description: 'rhino.fi protocol fee'
     })
@@ -349,7 +366,7 @@ export const computeFeeBps = (feeAmount, inputAmount) =>
  * @param {QuoteContext} ctx - The token/chain context for base-unit conversion.
  * @returns {SwidgeQuote} The mapped quote.
  */
-export const mapQuote = (quote, { fromToken, fromDecimals, toDecimals, fromChain }) => {
+export const mapQuote = (quote, { fromToken, fromDecimals, toDecimals, fromChain, toChain }) => {
   const fromTokenAmount = toBaseUnits(quote.payAmount, fromDecimals)
   const toTokenAmount = toBaseUnits(quote.receiveAmount, toDecimals)
 
@@ -361,7 +378,7 @@ export const mapQuote = (quote, { fromToken, fromDecimals, toDecimals, fromChain
     fromTokenAmount,
     toTokenAmount,
     toTokenAmountMin,
-    fees: mapFees(quote.fees, { token: fromToken, chain: fromChain, decimals: fromDecimals })
+    fees: mapFees(quote.fees, { token: fromToken, fromChain, toChain, decimals: fromDecimals })
   }
 
   if (typeof quote.estimatedDuration === 'number') {

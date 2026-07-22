@@ -15,30 +15,40 @@
 'use strict'
 
 import { RhinofiProtocolError, UnsupportedChainError } from './errors.js'
+import { isTronAccount } from './account-type.js'
 
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountEvm} WalletAccountEvm */
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
 /** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountEvmErc4337} WalletAccountEvmErc4337 */
 /** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountReadOnlyEvmErc4337} WalletAccountReadOnlyEvmErc4337 */
-/** @typedef {WalletAccountEvm | WalletAccountReadOnlyEvm | WalletAccountEvmErc4337 | WalletAccountReadOnlyEvmErc4337} SupportedAccount */
+/** @typedef {import('@tetherto/wdk-wallet-tron').WalletAccountTron} WalletAccountTron */
+/** @typedef {import('@tetherto/wdk-wallet-tron').WalletAccountReadOnlyTron} WalletAccountReadOnlyTron */
+/** @typedef {WalletAccountEvm | WalletAccountReadOnlyEvm | WalletAccountEvmErc4337 | WalletAccountReadOnlyEvmErc4337 | WalletAccountTron | WalletAccountReadOnlyTron} SupportedAccount */
 /** @typedef {import('@rhino.fi/sdk').ChainConfig} ChainConfig */
 /** @typedef {import('@rhino.fi/sdk').ChainAdapter} ChainAdapter */
+
+const TRON_CHAIN_KEY = 'TRON'
 
 /**
  * Reads the chain the account is connected to, which is the source chain for a
  * swidge (the WDK `SwidgeOptions` carry only a destination `toChain`). The WDK
- * account interface exposes no network accessor, so this reads the provider the
+ * account interface exposes no network accessor, so this reads the client the
  * account signs with. EVM accounts expose an ethers provider (`getNetwork`);
  * ERC-4337 accounts expose an EIP-1193 provider (`request`) — the chain id is
- * read through whichever this is. An account without a provider returns `null`
- * (the caller then has no source chain and must error).
+ * read through whichever this is. Tron accounts sign through a `TronWeb` client
+ * and have no chain id, so the tron chain key is returned when one is connected.
+ * An account without a connected client returns `null` (the caller then has no
+ * source chain and must error).
  *
  * @internal
  * @param {SupportedAccount | undefined} account - The WDK wallet account.
- * @returns {Promise<number | null>} The connected chain id (rhino `networkId`), or `null` if not discoverable.
+ * @returns {Promise<number | string | null>} The source chain identifier (rhino `networkId`, or the tron chain key), or `null` if not discoverable.
  * @throws {RhinofiProtocolError} If the account has a provider but reading its network fails (e.g. a connection error).
  */
 export const getAccountNetworkId = async (account) => {
+  if (isTronAccount(account)) {
+    return account._tronWeb ? TRON_CHAIN_KEY : null
+  }
   const provider = account?._provider
   if (!provider) return null
   try {
@@ -58,7 +68,7 @@ export const getAccountNetworkId = async (account) => {
  * account. The per-ecosystem SDK adapter is imported lazily.
  *
  * @internal
- * @param {WalletAccountEvm | WalletAccountEvmErc4337} account - The WDK wallet account (source-chain signer).
+ * @param {WalletAccountEvm | WalletAccountEvmErc4337 | WalletAccountTron} account - The WDK wallet account (source-chain signer).
  * @param {ChainConfig} chainConfig - The rhino.fi chain config entry for the source chain.
  * @returns {Promise<ChainAdapter>} The rhino.fi chain adapter.
  * @throws {UnsupportedChainError} If the source chain's ecosystem is not supported.
@@ -70,6 +80,10 @@ export const getChainAdapterForAccount = async (account, chainConfig) => {
     case 'evm': {
       const { getEvmChainAdapterFromWdkAccount } = await import('@rhino.fi/sdk/adapters/evm-wdk')
       return getEvmChainAdapterFromWdkAccount(account, chainConfig)
+    }
+    case 'tron': {
+      const { getTronChainAdapterFromWdkAccount } = await import('@rhino.fi/sdk/adapters/tron-wdk')
+      return getTronChainAdapterFromWdkAccount(account, chainConfig)
     }
     default:
       throw new UnsupportedChainError(`${chainConfig.name} (${type}) source chains are not yet supported`)
