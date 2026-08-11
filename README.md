@@ -86,7 +86,7 @@ provides an on-chain adapter:
 | --- | --- | --- |
 | EVM | ✅ Supported | `@tetherto/wdk-wallet-evm` (incl. ERC-4337); signs via `account.sendTransaction` |
 | Tron | ✅ Supported | `@tetherto/wdk-wallet-tron`; signs the TRC-20 approval + deposit via `account.sendTransaction` |
-| Solana | 🔜 Planned | |
+| Solana | ✅ Supported | `@tetherto/wdk-wallet-solana`; signs the deposit via `account.sendTransaction` (no approval step) |
 | TON | 🔜 Planned |  |
 
 ## Status mapping
@@ -138,8 +138,8 @@ All errors extend `RhinofiProtocolError`:
 Inherited legacy delegations `swap` / `quoteSwap` / `bridge` / `quoteBridge`
 map onto `swidge` / `quoteSwidge`. Their option shapes carry no source chain, so
 it must be derivable from the account (an EVM account connected to a provider,
-or a Tron account connected to a `TronWeb` client); otherwise they throw
-`RhinofiProtocolError`.
+a Tron account connected to a `TronWeb` client, or a Solana account connected
+to an RPC provider); otherwise they throw `RhinofiProtocolError`.
 
 ## Examples
 

@@ -10,6 +10,8 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals'
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -53,7 +55,7 @@ const DUMMY_CONFIG = {
 const bridgeApi = {
   getBridgeConfig: jest.fn(),
   getSwapTokensConfig: jest.fn(),
-  getSwapPublicQuote: jest.fn(),
+  getSwapUserQuote: jest.fn(),
   getBridgeStatus: jest.fn()
 }
 const prepareBridge = jest.fn()
@@ -90,10 +92,24 @@ const waitForRpc = async (timeoutMs = 60000) => {
 }
 
 beforeAll(async () => {
+  // Resolve the hardhat CLI entry instead of relying on node_modules/.bin so
+  // the spawn works under both npm and Yarn PnP installs. Under PnP the child
+  // node process needs the PnP runtime preloaded to resolve hardhat's deps;
+  // the loader is found by walking up from the package root (absent under npm).
+  const require = createRequire(import.meta.url)
+  const hardhatCli = require.resolve('hardhat/internal/cli/cli.js')
+  const env = { ...process.env }
+  for (let dir = ROOT, parent = null; parent !== dir; parent = dir, dir = dirname(dir)) {
+    const pnpLoader = join(dir, '.pnp.cjs')
+    if (existsSync(pnpLoader)) {
+      env.NODE_OPTIONS = [env.NODE_OPTIONS, `--require ${pnpLoader}`].filter(Boolean).join(' ')
+      break
+    }
+  }
   nodeProcess = spawn(
-    join(ROOT, 'node_modules', '.bin', 'hardhat'),
-    ['node', '--hostname', '127.0.0.1', '--port', String(RPC_PORT)],
-    { cwd: ROOT, stdio: 'ignore' }
+    process.execPath,
+    [hardhatCli, 'node', '--hostname', '127.0.0.1', '--port', String(RPC_PORT)],
+    { cwd: ROOT, stdio: 'ignore', env }
   )
   const chainId = await waitForRpc()
   expect(chainId).toBe(HARDHAT_CHAIN_ID)
@@ -120,7 +136,7 @@ const makeProtocol = (config = {}) =>
 
 describe('integration: real account against a live node', () => {
   it('derives the source chain from the account live provider', async () => {
-    bridgeApi.getSwapPublicQuote.mockResolvedValue({
+    bridgeApi.getSwapUserQuote.mockResolvedValue({
       data: {
         chainIn: 'ARBITRUM',
         chainOut: 'BASE',
@@ -139,13 +155,13 @@ describe('integration: real account against a live node', () => {
 
     // chainIn was resolved from the node's chain id (42161 -> ARBITRUM), read
     // through the real WalletAccountEvm provider, not from any explicit option.
-    const [args] = bridgeApi.getSwapPublicQuote.mock.calls[0]
+    const [args] = bridgeApi.getSwapUserQuote.mock.calls[0]
     expect(args.chainIn).toBe('ARBITRUM')
     expect(args.chainOut).toBe('BASE')
   })
 
   it('preserves 18-decimal precision through the public quote', async () => {
-    bridgeApi.getSwapPublicQuote.mockResolvedValue({
+    bridgeApi.getSwapUserQuote.mockResolvedValue({
       data: {
         chainIn: 'ARBITRUM',
         chainOut: 'BASE',

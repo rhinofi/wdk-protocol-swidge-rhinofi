@@ -11,18 +11,18 @@ export default class RhinofiProtocol extends SwidgeProtocol {
      * Creates a new read-only rhinofi swidge protocol.
      *
      * @overload
-     * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337 | WalletAccountReadOnlyTron} account - The wallet account to use to interact with the protocol.
+     * @param {WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337 | WalletAccountReadOnlySolana | WalletAccountReadOnlyTron} account - The wallet account to use to interact with the protocol.
      * @param {RhinofiProtocolConfig} config - The rhinofi protocol configuration.
      */
-    constructor(account: WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337 | WalletAccountReadOnlyTron, config: RhinofiProtocolConfig);
+    constructor(account: WalletAccountReadOnlyEvm | WalletAccountReadOnlyEvmErc4337 | WalletAccountReadOnlySolana | WalletAccountReadOnlyTron, config: RhinofiProtocolConfig);
     /**
      * Creates a new rhinofi swidge protocol.
      *
      * @overload
-     * @param {WalletAccountEvm | WalletAccountEvmErc4337 | WalletAccountTron} account - The wallet account to use to interact with the protocol.
+     * @param {WalletAccountEvm | WalletAccountEvmErc4337 | WalletAccountSolana | WalletAccountTron} account - The wallet account to use to interact with the protocol.
      * @param {RhinofiProtocolConfig} config - The rhinofi protocol configuration.
      */
-    constructor(account: WalletAccountEvm | WalletAccountEvmErc4337 | WalletAccountTron, config: RhinofiProtocolConfig);
+    constructor(account: WalletAccountEvm | WalletAccountEvmErc4337 | WalletAccountSolana | WalletAccountTron, config: RhinofiProtocolConfig);
     /** @private */
     private _sdk;
     /** @private */
@@ -93,6 +93,8 @@ export type WalletAccountEvm = import("@tetherto/wdk-wallet-evm").WalletAccountE
 export type WalletAccountReadOnlyEvm = import("@tetherto/wdk-wallet-evm").WalletAccountReadOnlyEvm;
 export type WalletAccountEvmErc4337 = import("@tetherto/wdk-wallet-evm-erc-4337").WalletAccountEvmErc4337;
 export type WalletAccountReadOnlyEvmErc4337 = import("@tetherto/wdk-wallet-evm-erc-4337").WalletAccountReadOnlyEvmErc4337;
+export type WalletAccountSolana = import("@tetherto/wdk-wallet-solana").WalletAccountSolana;
+export type WalletAccountReadOnlySolana = import("@tetherto/wdk-wallet-solana").WalletAccountReadOnlySolana;
 export type WalletAccountTron = import("@tetherto/wdk-wallet-tron").WalletAccountTron;
 export type WalletAccountReadOnlyTron = import("@tetherto/wdk-wallet-tron").WalletAccountReadOnlyTron;
 export type SwidgeOptions = import("@tetherto/wdk-wallet/protocols").SwidgeOptions;
@@ -134,6 +136,3 @@ export type RhinofiProtocolConfig = {
     configTtlMs?: number;
 };
 import { SwidgeProtocol } from '@tetherto/wdk-wallet/protocols';
-import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm';
-import { WalletAccountEvmErc4337 } from '@tetherto/wdk-wallet-evm-erc-4337';
-import { WalletAccountTron } from '@tetherto/wdk-wallet-tron';
