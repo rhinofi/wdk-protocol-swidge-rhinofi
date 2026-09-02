@@ -34,12 +34,13 @@ const constructorNames = (account) => {
 const FULL_ACCOUNT_CLASS_NAMES = [
   'WalletAccountEvm',
   'WalletAccountEvmErc4337',
+  'WalletAccountSolana',
   'WalletAccountTron'
 ]
 
 /**
  * Returns whether the account is a full (signing) account — i.e. an EVM,
- * ERC-4337 or Tron account, but not a read-only one.
+ * ERC-4337, Solana or Tron account, but not a read-only one.
  *
  * @param {object | null | undefined} account - The wallet account.
  * @returns {boolean} True if the account can sign and broadcast transactions.
@@ -51,8 +52,9 @@ export const isFullAccount = (account) => {
 }
 
 /**
- * Returns whether the account is a Tron account (full or read-only). Both
- * variants extend `WalletAccountReadOnlyTron`.
+ * Returns whether the account is a Tron account (full or read-only).
+ * `WalletAccountTron` extends `WalletAccountReadOnlyTron`, so looking for the
+ * read-only class in the prototype chain matches both.
  *
  * @param {object | null | undefined} account - The wallet account.
  * @returns {boolean} True if the account is a Tron wallet account.
@@ -60,4 +62,17 @@ export const isFullAccount = (account) => {
 export const isTronAccount = (account) => {
   if (!account) return false
   return constructorNames(account).has('WalletAccountReadOnlyTron')
+}
+
+/**
+ * Returns whether the account is a Solana account (full or read-only).
+ * `WalletAccountSolana` extends `WalletAccountReadOnlySolana`, so looking for
+ * the read-only class in the prototype chain matches both.
+ *
+ * @param {object | null | undefined} account - The wallet account.
+ * @returns {boolean} True if the account is a Solana wallet account.
+ */
+export const isSolanaAccount = (account) => {
+  if (!account) return false
+  return constructorNames(account).has('WalletAccountReadOnlySolana')
 }

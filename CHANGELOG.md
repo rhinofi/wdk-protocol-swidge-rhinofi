@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.0
+
+### Minor Changes
+
+- e4d44bf: Support Solana as a source chain: a `@tetherto/wdk-wallet-solana` account can now quote and execute swidges, with the deposit signed through the account.
+
+### Patch Changes
+
+- bbfbcf0: No functional changes.
+- Updated dependencies [35ffa64]
+- Updated dependencies [0f7d6e7]
+- Updated dependencies [e4d44bf]
+- Updated dependencies [5690559]
+- Updated dependencies [cfa8c16]
+  - @rhino.fi/sdk@2.0.0
+
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -8,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-07-15
 
 ### Fixed
+
 - **Fee chains**: the destination-chain gas fee (`gasFee`) is now reported on the
   destination chain instead of being merged with source gas and labelled as the
   source chain. When the route swaps on the source chain, that source-swap gas
@@ -15,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   protocol fee (not tied to a chain) now carries no `chain`.
 
 ### Added
+
 - **Quote reuse**: `quoteSwidge` now returns a committable rhino.fi quote on the
   result's `quote` field. Pass it back to `swidge(options, { quote })` to execute
   against that exact quote instead of re-fetching — so the amounts quoted are the
@@ -29,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0-beta.1] - 2026-06-03
 
 ### Added
+
 - Initial rhino.fi `SwidgeProtocol` implementation: `quoteSwidge`, `swidge`,
   `getSwidgeStatus`, `getSupportedChains`, `getSupportedTokens`.
 - On-chain **EVM** source-chain support: signs through the WDK account via the
@@ -39,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `UnknownOperationError`, `SwidgeExecutionError`).
 
 ### Notes
+
 - Requires `@rhino.fi/sdk` with the additive `getEvmChainAdapterFromWdkAccount`
   adapter factory.
 

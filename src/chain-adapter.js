@@ -15,19 +15,22 @@
 'use strict'
 
 import { RhinofiProtocolError, UnsupportedChainError } from './errors.js'
-import { isTronAccount } from './account-type.js'
+import { isSolanaAccount, isTronAccount } from './account-type.js'
 
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountEvm} WalletAccountEvm */
 /** @typedef {import('@tetherto/wdk-wallet-evm').WalletAccountReadOnlyEvm} WalletAccountReadOnlyEvm */
 /** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountEvmErc4337} WalletAccountEvmErc4337 */
 /** @typedef {import('@tetherto/wdk-wallet-evm-erc-4337').WalletAccountReadOnlyEvmErc4337} WalletAccountReadOnlyEvmErc4337 */
+/** @typedef {import('@tetherto/wdk-wallet-solana').WalletAccountSolana} WalletAccountSolana */
+/** @typedef {import('@tetherto/wdk-wallet-solana').WalletAccountReadOnlySolana} WalletAccountReadOnlySolana */
 /** @typedef {import('@tetherto/wdk-wallet-tron').WalletAccountTron} WalletAccountTron */
 /** @typedef {import('@tetherto/wdk-wallet-tron').WalletAccountReadOnlyTron} WalletAccountReadOnlyTron */
-/** @typedef {WalletAccountEvm | WalletAccountReadOnlyEvm | WalletAccountEvmErc4337 | WalletAccountReadOnlyEvmErc4337 | WalletAccountTron | WalletAccountReadOnlyTron} SupportedAccount */
+/** @typedef {WalletAccountEvm | WalletAccountReadOnlyEvm | WalletAccountEvmErc4337 | WalletAccountReadOnlyEvmErc4337 | WalletAccountSolana | WalletAccountReadOnlySolana | WalletAccountTron | WalletAccountReadOnlyTron} SupportedAccount */
 /** @typedef {import('@rhino.fi/sdk').ChainConfig} ChainConfig */
 /** @typedef {import('@rhino.fi/sdk').ChainAdapter} ChainAdapter */
 
 const TRON_CHAIN_KEY = 'TRON'
+const SOLANA_CHAIN_KEY = 'SOLANA'
 
 /**
  * Reads the chain the account is connected to, which is the source chain for a
@@ -36,18 +39,22 @@ const TRON_CHAIN_KEY = 'TRON'
  * account signs with. EVM accounts expose an ethers provider (`getNetwork`);
  * ERC-4337 accounts expose an EIP-1193 provider (`request`) — the chain id is
  * read through whichever this is. Tron accounts sign through a `TronWeb` client
- * and have no chain id, so the tron chain key is returned when one is connected.
+ * and Solana accounts through a Solana RPC client — neither has a chain id, so
+ * their rhino chain key is returned when a client is connected.
  * An account without a connected client returns `null` (the caller then has no
  * source chain and must error).
  *
  * @internal
  * @param {SupportedAccount | undefined} account - The WDK wallet account.
- * @returns {Promise<number | string | null>} The source chain identifier (rhino `networkId`, or the tron chain key), or `null` if not discoverable.
+ * @returns {Promise<number | string | null>} The source chain identifier (rhino `networkId`, or the tron/solana chain key), or `null` if not discoverable.
  * @throws {RhinofiProtocolError} If the account has a provider but reading its network fails (e.g. a connection error).
  */
 export const getAccountNetworkId = async (account) => {
   if (isTronAccount(account)) {
     return account._tronWeb ? TRON_CHAIN_KEY : null
+  }
+  if (isSolanaAccount(account)) {
+    return account._rpc ? SOLANA_CHAIN_KEY : null
   }
   const provider = account?._provider
   if (!provider) return null
@@ -68,7 +75,7 @@ export const getAccountNetworkId = async (account) => {
  * account. The per-ecosystem SDK adapter is imported lazily.
  *
  * @internal
- * @param {WalletAccountEvm | WalletAccountEvmErc4337 | WalletAccountTron} account - The WDK wallet account (source-chain signer).
+ * @param {WalletAccountEvm | WalletAccountEvmErc4337 | WalletAccountSolana | WalletAccountTron} account - The WDK wallet account (source-chain signer).
  * @param {ChainConfig} chainConfig - The rhino.fi chain config entry for the source chain.
  * @returns {Promise<ChainAdapter>} The rhino.fi chain adapter.
  * @throws {UnsupportedChainError} If the source chain's ecosystem is not supported.
@@ -80,6 +87,10 @@ export const getChainAdapterForAccount = async (account, chainConfig) => {
     case 'evm': {
       const { getEvmChainAdapterFromWdkAccount } = await import('@rhino.fi/sdk/adapters/evm-wdk')
       return getEvmChainAdapterFromWdkAccount(account, chainConfig)
+    }
+    case 'sol': {
+      const { getSolanaChainAdapterFromWdkAccount } = await import('@rhino.fi/sdk/adapters/solana-wdk')
+      return getSolanaChainAdapterFromWdkAccount(account, chainConfig)
     }
     case 'tron': {
       const { getTronChainAdapterFromWdkAccount } = await import('@rhino.fi/sdk/adapters/tron-wdk')

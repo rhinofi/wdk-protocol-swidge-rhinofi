@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 import { ISwidgeProtocol } from '@tetherto/wdk-wallet/protocols'
 import { WalletAccountEvm, WalletAccountReadOnlyEvm } from '@tetherto/wdk-wallet-evm'
+import { WalletAccountSolana, WalletAccountReadOnlySolana } from '@tetherto/wdk-wallet-solana'
 import { WalletAccountTron, WalletAccountReadOnlyTron } from '@tetherto/wdk-wallet-tron'
 
 // --- Fixtures -------------------------------------------------------------
@@ -22,6 +23,10 @@ const DUMMY_DAI_BASE_ADDRESS = '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb'
 const DUMMY_TRON_DEPOSITOR = 'TQn9Y2khEsLMWD1bkoAExjE9L4rWuT1zpx'
 const DUMMY_USDT_TRON_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
 const DUMMY_TRON_TX_HASH = 'a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00'
+
+const DUMMY_SOLANA_DEPOSITOR = 'AQNisQahL5xpf9s3d5xKMNJBJDm45few9hDsC2EE1WKb'
+const DUMMY_USDT_SOLANA_ADDRESS = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'
+const DUMMY_SOLANA_TX_HASH = '2BMLiEwsPxUFtEdputxtioZ3Qi3b2fN434rLgXArTKhZUaBmEhCtQv4HCLeGsc4umzsDz2siLiUVPNsQDgRmmbq8'
 
 const DUMMY_CONFIG = {
   ARBITRUM: {
@@ -67,6 +72,19 @@ const DUMMY_CONFIG = {
     enabledDepositAddress: false,
     gasBoostEnabled: false,
     tokens: { USDC: { token: 'USDC', address: DUMMY_USDC_ETHEREUM_ADDRESS, decimals: 6 } }
+  },
+  SOLANA: {
+    name: 'Solana',
+    type: 'SOL',
+    networkId: '900',
+    rpc: 'https://dummy-solana-rpc.url/',
+    contractAddress: 'FCW1uBM3pZ7fQWvEL9sxTe4fNiH41bu9DWX4ErTZ6aMq',
+    nativeTokenName: 'SOL',
+    nativeTokenDecimals: 9,
+    status: 'enabled',
+    enabledDepositAddress: true,
+    gasBoostEnabled: false,
+    tokens: { USDT: { token: 'USDT', address: DUMMY_USDT_SOLANA_ADDRESS, decimals: 6 } }
   },
   TRON: {
     name: 'Tron',
@@ -128,6 +146,7 @@ const RhinoSdk = jest.fn(() => ({ api: { bridge: bridgeApi }, prepareBridge }))
 
 jest.unstable_mockModule('@rhino.fi/sdk', () => ({ RhinoSdk }))
 jest.unstable_mockModule('@rhino.fi/sdk/adapters/evm-wdk', () => ({ getEvmChainAdapterFromWdkAccount: jest.fn(() => ({ networkId: '42161' })) }))
+jest.unstable_mockModule('@rhino.fi/sdk/adapters/solana-wdk', () => ({ getSolanaChainAdapterFromWdkAccount: jest.fn(() => ({ networkId: '900' })) }))
 jest.unstable_mockModule('@rhino.fi/sdk/adapters/tron-wdk', () => ({ getTronChainAdapterFromWdkAccount: jest.fn(() => ({ networkId: '728126428' })) }))
 
 const indexModule = await import('../index.js')
@@ -180,6 +199,22 @@ const readOnlyTronAccount = () =>
   Object.assign(Object.create(WalletAccountReadOnlyTron.prototype), {
     _tronWeb: {},
     getAddress: jest.fn(async () => DUMMY_TRON_DEPOSITOR)
+  })
+
+// A full (signing) solana account.
+const solanaAccount = (connected = true) =>
+  Object.assign(Object.create(WalletAccountSolana.prototype), {
+    _rpc: connected ? {} : undefined,
+    getAddress: jest.fn(async () => DUMMY_SOLANA_DEPOSITOR),
+    sendTransaction: jest.fn(async () => ({ hash: DUMMY_SOLANA_TX_HASH, fee: 1n }))
+  })
+
+// A read-only solana account (the parent class), which must be rejected by the
+// full-account gate.
+const readOnlySolanaAccount = () =>
+  Object.assign(Object.create(WalletAccountReadOnlySolana.prototype), {
+    _rpc: {},
+    getAddress: jest.fn(async () => DUMMY_SOLANA_DEPOSITOR)
   })
 
 const noApprovalPrep = () =>
@@ -349,7 +384,7 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
     it('should derive a tron source chain from a tron account', async () => {
       const protocol = makeProtocol({}, tronAccount())
 
-      await protocol.quoteSwidge({ fromToken: 'USDT', toToken: 'USDC', toChain: 'BASE', fromTokenAmount: 1000000n })
+      await protocol.quoteSwidge({ fromToken: 'USDT', toToken: 'USDC', toChain: 'BASE', fromTokenAmount: 1000000n, recipient: DUMMY_RECIPIENT })
 
       expect(bridgeApi.getSwapUserQuote).toHaveBeenCalledWith({
         chainIn: 'TRON',
@@ -359,12 +394,37 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
         amount: '1',
         mode: 'pay',
         depositor: DUMMY_TRON_DEPOSITOR,
-        recipient: DUMMY_TRON_DEPOSITOR
+        recipient: DUMMY_RECIPIENT
       })
     })
 
     it('should throw if the tron account is not connected to a client', async () => {
       const protocol = makeProtocol({}, tronAccount(false))
+
+      await expect(
+        protocol.quoteSwidge({ fromToken: 'USDT', toToken: 'USDC', toChain: 'BASE', fromTokenAmount: 1000000n })
+      ).rejects.toThrow('The source chain could not be determined from the account. Connect the wallet account to a provider for its source chain.')
+    })
+
+    it('should derive a solana source chain from a solana account', async () => {
+      const protocol = makeProtocol({}, solanaAccount())
+
+      await protocol.quoteSwidge({ fromToken: 'USDT', toToken: 'USDC', toChain: 'BASE', fromTokenAmount: 1000000n, recipient: DUMMY_RECIPIENT })
+
+      expect(bridgeApi.getSwapUserQuote).toHaveBeenCalledWith({
+        chainIn: 'SOLANA',
+        chainOut: 'BASE',
+        tokenIn: 'USDT',
+        tokenOut: 'USDC',
+        amount: '1',
+        mode: 'pay',
+        depositor: DUMMY_SOLANA_DEPOSITOR,
+        recipient: DUMMY_RECIPIENT
+      })
+    })
+
+    it('should throw if the solana account is not connected to a provider', async () => {
+      const protocol = makeProtocol({}, solanaAccount(false))
 
       await expect(
         protocol.quoteSwidge({ fromToken: 'USDT', toToken: 'USDC', toChain: 'BASE', fromTokenAmount: 1000000n })
@@ -396,8 +456,8 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       const protocol = makeProtocol()
 
       await expect(
-        protocol.quoteSwidge({ fromToken: 'USDT', toToken: 'USDC', toChain: 'SOLANA', fromTokenAmount: 1000000n })
-      ).rejects.toThrow('Chain "SOLANA" is not supported by the rhino.fi protocol.')
+        protocol.quoteSwidge({ fromToken: 'USDT', toToken: 'USDC', toChain: 'APTOS', fromTokenAmount: 1000000n })
+      ).rejects.toThrow('Chain "APTOS" is not supported by the rhino.fi protocol.')
     })
 
     it('should throw UnsupportedTokenError for an unknown token', async () => {
@@ -679,6 +739,47 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
     })
   })
 
+  describe('swidge (solana source)', () => {
+    it('should perform a swidge from a solana source chain', async () => {
+      const protocol = makeProtocol({}, solanaAccount())
+
+      const result = await protocol.swidge({
+        fromToken: 'USDT',
+        toToken: 'USDC',
+        toChain: 'BASE',
+        fromTokenAmount: 1000000n
+      })
+
+      const [bridgeData] = prepareBridge.mock.calls[0]
+      expect(bridgeData).toEqual({
+        type: 'bridgeSwap',
+        tokenIn: 'USDT',
+        tokenOut: 'USDC',
+        chainIn: 'SOLANA',
+        chainOut: 'BASE',
+        amount: '1',
+        mode: 'pay',
+        depositor: DUMMY_SOLANA_DEPOSITOR,
+        recipient: DUMMY_SOLANA_DEPOSITOR
+      })
+      expect(result.transactions).toEqual([
+        { hash: DUMMY_DEPOSIT_HASH, chain: 'SOLANA', type: 'source' }
+      ])
+    })
+
+    it('should reject a read-only solana account', async () => {
+      const protocol = new RhinofiProtocol(readOnlySolanaAccount(), { apiKey: 'dummy-api-key' })
+
+      await expect(protocol.swidge({
+        fromToken: 'USDT',
+        toToken: 'USDC',
+        toChain: 'BASE',
+        fromTokenAmount: 1000000n
+      })).rejects.toThrow('A wallet account with signing capabilities is required to execute a swidge.')
+      expect(prepareBridge).not.toHaveBeenCalled()
+    })
+  })
+
   describe('getSwidgeStatus', () => {
     it('should successfully return the status of an operation', async () => {
       bridgeApi.getBridgeStatus.mockResolvedValue({
@@ -763,6 +864,7 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(chains).toEqual([
         { id: 'ARBITRUM', name: 'Arbitrum', type: 'evm', nativeToken: 'ETH' },
         { id: 'BASE', name: 'Base', type: 'evm', nativeToken: 'ETH' },
+        { id: 'SOLANA', name: 'Solana', type: 'sol', nativeToken: 'SOL' },
         { id: 'TRON', name: 'Tron', type: 'tron', nativeToken: 'TRX' }
       ])
     })
@@ -779,6 +881,7 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
         { token: 'USDT', chain: 'ARBITRUM', symbol: 'USDT', decimals: 6, address: DUMMY_USDT_ARBITRUM_ADDRESS },
         { token: 'USDC', chain: 'ARBITRUM', symbol: 'USDC', decimals: 6, address: DUMMY_USDC_ARBITRUM_ADDRESS },
         { token: 'USDC', chain: 'BASE', symbol: 'USDC', decimals: 6, address: DUMMY_USDC_BASE_ADDRESS },
+        { token: 'USDT', chain: 'SOLANA', symbol: 'USDT', decimals: 6, address: DUMMY_USDT_SOLANA_ADDRESS },
         { token: 'USDT', chain: 'TRON', symbol: 'USDT', decimals: 6, address: DUMMY_USDT_TRON_ADDRESS }
       ])
     })
@@ -897,6 +1000,7 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(chains).toEqual([
         { id: 'ARBITRUM', name: 'Arbitrum', type: 'evm', nativeToken: 'ETH' },
         { id: 'BASE', name: 'Base', type: 'evm', nativeToken: 'ETH' },
+        { id: 'SOLANA', name: 'Solana', type: 'sol', nativeToken: 'SOL' },
         { id: 'TRON', name: 'Tron', type: 'tron', nativeToken: 'TRX' }
       ])
       expect(bridgeApi.getBridgeConfig).toHaveBeenCalledTimes(2)
