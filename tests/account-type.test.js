@@ -4,7 +4,7 @@ import { WalletAccountEvmErc4337, WalletAccountReadOnlyEvmErc4337 } from '@tethe
 import { WalletAccountSolana, WalletAccountReadOnlySolana } from '@tetherto/wdk-wallet-solana'
 import { WalletAccountTron, WalletAccountReadOnlyTron } from '@tetherto/wdk-wallet-tron'
 
-import { isFullAccount, isSolanaAccount, isTronAccount } from '../src/account-type.js'
+import { isErc4337Account, isFullAccount, isSolanaAccount, isTronAccount } from '../src/account-type.js'
 
 const onPrototype = (Class) => Object.create(Class.prototype)
 
@@ -71,6 +71,25 @@ describe('account-type', () => {
     it('detects a solana account from a different module copy', () => {
       class WalletAccountReadOnlySolana { }
       expect(isSolanaAccount(new WalletAccountReadOnlySolana())).toBe(true)
+    })
+  })
+
+  describe('isErc4337Account', () => {
+    it('accepts both full and read-only erc-4337 accounts', () => {
+      expect(isErc4337Account(onPrototype(WalletAccountEvmErc4337))).toBe(true)
+      expect(isErc4337Account(onPrototype(WalletAccountReadOnlyEvmErc4337))).toBe(true)
+    })
+
+    it('rejects plain evm and other accounts', () => {
+      expect(isErc4337Account(onPrototype(WalletAccountEvm))).toBe(false)
+      expect(isErc4337Account(onPrototype(WalletAccountReadOnlyEvm))).toBe(false)
+      expect(isErc4337Account(onPrototype(WalletAccountSolana))).toBe(false)
+      expect(isErc4337Account(undefined)).toBe(false)
+    })
+
+    it('detects an erc-4337 account from a different module copy', () => {
+      class WalletAccountReadOnlyEvmErc4337 { }
+      expect(isErc4337Account(new WalletAccountReadOnlyEvmErc4337())).toBe(true)
     })
   })
 })

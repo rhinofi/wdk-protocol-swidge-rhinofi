@@ -103,6 +103,23 @@ const MIN_PRICE_IMPACT = 1e-9
  */
 
 /**
+ * The source-chain fee quote this module reads from a rhino.fi chain adapter.
+ *
+ * @typedef {Object} DepositFeeQuote
+ * @property {bigint} fee - The total fee in base units of the fee token.
+ * @property {boolean} includesApproval - Whether a token approval is part of the fee.
+ */
+
+/**
+ * The context a source-chain fee is denominated in.
+ *
+ * @typedef {Object} SourceFeeContext
+ * @property {string} chainKey - The source chain key.
+ * @property {ChainConfig} chainEntry - The source chain's config entry.
+ * @property {string} [feeTokenAddress] - The address of the token the fee is paid in, when not the chain's native token.
+ */
+
+/**
  * The token/chain context used to map a rhino.fi quote into base-unit amounts.
  *
  * @typedef {Object} QuoteContext
@@ -348,6 +365,50 @@ export const mapFees = (fees, { token, fromChain, toChain, decimals }) => {
   }
   return result
 }
+
+/**
+ * Maps the source-chain fee the wallet pays to make the deposit (and the token
+ * approval, when one is needed) to a {@link SwidgeFee}. Unlike the rhino.fi fees
+ * it is paid on top of the quoted amounts rather than deducted from them
+ * (`included: false`), in the token the wallet pays gas in: the chain's native
+ * token, or an ERC-4337 paymaster token — named by its rhino.fi symbol when the
+ * chain config lists it, and by its address otherwise.
+ *
+ * @param {DepositFeeQuote} depositFee - The fee quoted through the chain adapter.
+ * @param {SourceFeeContext} ctx - The source chain and fee token.
+ * @returns {SwidgeFee} The source-chain network fee.
+ */
+export const mapSourceNetworkFee = ({ fee, includesApproval }, { chainKey, chainEntry, feeTokenAddress }) => {
+  const feeToken = feeTokenAddress
+    ? Object.values(chainEntry.tokens ?? {}).find(
+      (candidate) => candidate.address?.toLowerCase() === feeTokenAddress.toLowerCase()
+    )?.token ?? feeTokenAddress
+    : chainEntry.nativeTokenName
+  return {
+    type: 'network',
+    amount: fee,
+    token: feeToken,
+    chain: chainKey,
+    included: false,
+    description: includesApproval
+      ? 'Source-chain gas for the token approval and deposit'
+      : 'Source-chain gas for the deposit'
+  }
+}
+
+/**
+ * Sums the fees deducted from the quoted amounts (rhino.fi's, in the input
+ * token), leaving out the wallet-paid source-chain gas, which is in another
+ * token and paid on top.
+ *
+ * @param {SwidgeFee[]} fees - The itemised fees.
+ * @param {SwidgeFee['type']} [type] - Limit the sum to one fee type.
+ * @returns {bigint} The summed amount in the input token.
+ */
+export const sumDeductedFees = (fees, type) =>
+  fees
+    .filter((fee) => fee.included && (type === undefined || fee.type === type))
+    .reduce((sum, fee) => sum + fee.amount, 0n)
 
 /**
  * Computes a fee in basis points of the input amount.

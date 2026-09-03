@@ -32,5 +32,6 @@ const quote = await swidge.quoteSwidge({
 
 console.log(`Receive ~${quote.toTokenAmount} USDC (minimum ${quote.toTokenAmountMin})`)
 for (const fee of quote.fees) {
-  console.log(`  ${fee.type} fee: ${fee.amount} ${fee.token}`)
+  const note = fee.included ? '' : ' (paid by the wallet, on top of the amount)'
+  console.log(`  ${fee.type} fee: ${fee.amount} ${fee.token}${note}`)
 }

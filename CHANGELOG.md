@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.3.0
+
+### Minor Changes
+
+- 376a3fd: `quoteSwidge()` and `swidge()` now also quote the source-chain network fee the wallet pays to make the deposit (and the token approval, when the allowance is short), simulated through the account. It is reported as a `network` fee on the source chain with `included: false`, in the token the wallet pays gas in, the chain's native token, or an ERC-4337 paymaster token.
+
+### Patch Changes
+
+- 3bfb3b3: Improved error handling for the WDK module, bundle approval + submit for erc4337 accounts
+- Updated dependencies [3bfb3b3]
+- Updated dependencies [376a3fd]
+  - @rhino.fi/sdk@3.2.0
+
+## 1.2.0
+
+### Minor Changes
+
+- 5c1d45e: Read chain state through the provider the wallet account is already configured with, rather than the RPC in rhino.fi's chain config, so reachability from the end user's device is under the integrator's control.
+
+  Add an `onDepositSubmitted` hook to the per-call `swidge` config. It fires once the deposit has been handed off but before it is known to be on chain, distinguishing "no deposit was sent" (safe to retry) from "sent, not yet mined" (not safe to retry). For ERC-4337 accounts it carries the user operation hash; the settled transaction hash still arrives as the resolved result's `hash`.
+
+### Patch Changes
+
+- Updated dependencies [5c1d45e]
+  - @rhino.fi/sdk@3.1.0
+
+## 1.1.1
+
+### Patch Changes
+
+- Updated dependencies [c40b9a6]
+  - @rhino.fi/sdk@3.0.0
+
 ## 1.1.0
 
 ### Minor Changes
