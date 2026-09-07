@@ -178,6 +178,7 @@ export class SwidgeExecutionError extends RhinofiProtocolError {
    * @param {Object} [details] - Optional error details.
    * @param {unknown} [details.cause] - The error's cause.
    * @param {string} [details.code] - The rhino.fi failure code.
+   * @param {string} [details.approvalTxHash] - The broadcast approval transaction's hash.
    */
   constructor (message, details = {}) {
     super(message, details.cause !== undefined ? { cause: details.cause } : undefined)
@@ -188,5 +189,13 @@ export class SwidgeExecutionError extends RhinofiProtocolError {
      * @type {string | undefined}
      */
     this.code = details.code
+
+    /**
+     * The broadcast approval transaction's hash, present when the failure happened after an
+     * approval left the device — its network fee may have been charged despite the failure.
+     *
+     * @type {string | undefined}
+     */
+    this.approvalTxHash = details.approvalTxHash
   }
 }

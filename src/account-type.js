@@ -76,3 +76,16 @@ export const isSolanaAccount = (account) => {
   if (!account) return false
   return constructorNames(account).has('WalletAccountReadOnlySolana')
 }
+
+/**
+ * Returns whether the account is an ERC-4337 account (full or read-only).
+ * `WalletAccountEvmErc4337` extends `WalletAccountReadOnlyEvmErc4337`, so
+ * looking for the read-only class in the prototype chain matches both.
+ *
+ * @param {object | null | undefined} account - The wallet account.
+ * @returns {boolean} True if the account is an ERC-4337 wallet account.
+ */
+export const isErc4337Account = (account) => {
+  if (!account) return false
+  return constructorNames(account).has('WalletAccountReadOnlyEvmErc4337')
+}

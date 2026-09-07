@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 import { ISwidgeProtocol } from '@tetherto/wdk-wallet/protocols'
 import { WalletAccountEvm, WalletAccountReadOnlyEvm } from '@tetherto/wdk-wallet-evm'
+import { WalletAccountReadOnlyEvmErc4337 } from '@tetherto/wdk-wallet-evm-erc-4337'
 import { WalletAccountSolana, WalletAccountReadOnlySolana } from '@tetherto/wdk-wallet-solana'
 import { WalletAccountTron, WalletAccountReadOnlyTron } from '@tetherto/wdk-wallet-tron'
 
@@ -13,6 +14,7 @@ const DUMMY_DEPOSIT_HASH = '0x6e3c7d4a92b8f1e05c6a89d273b4f8a1c5e92d7b0a4f86c3e1
 const DUMMY_WITHDRAW_HASH = '0x9b1f4e7c25a8d3061e9c74b8f2a5d1c08e6b39f7d2a41c85b0e67d3a9f158c24'
 const DUMMY_APPROVAL_HASH = '0x2d8a5f1c7e94b3062a7d91c4f8e5b2a06c3f97e1d8b54a20c6e83f1b9d472a05'
 const DUMMY_REFUND_HASH = '0x5c2e8b4f19a7d6032c8b95e1f4a7d2b08f6c31e9d5a82b47c0e19f6b3d854a17'
+const DUMMY_USER_OP_HASH = '0x7a3f0d9b6e2c85417f0b3d96a8c25e14b7d0f83a6c19e5b24d78f0a3c95b16e2'
 
 const DUMMY_USDT_ARBITRUM_ADDRESS = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9'
 const DUMMY_USDC_ARBITRUM_ADDRESS = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
@@ -133,6 +135,13 @@ const DUMMY_QUOTE_FEES = [
   { type: 'protocol', amount: 5000n, token: 'USDT', included: true, description: 'rhino.fi protocol fee' }
 ]
 
+// What the (mocked) source-chain adapter quotes for the deposit, and the wallet-paid
+// SwidgeFee quoteSwidge derives from it on an EVM source chain.
+const DUMMY_SOURCE_FEE_QUOTE = { fee: 210000n, includesApproval: false }
+const DUMMY_SOURCE_NETWORK_FEE = {
+  type: 'network', amount: 210000n, token: 'ETH', chain: 'ARBITRUM', included: false, description: 'Source-chain gas for the deposit'
+}
+
 // --- Mocks ----------------------------------------------------------------
 
 const bridgeApi = {
@@ -144,9 +153,12 @@ const bridgeApi = {
 const prepareBridge = jest.fn()
 const RhinoSdk = jest.fn(() => ({ api: { bridge: bridgeApi }, prepareBridge }))
 
+// The EVM and Solana adapters quote the source-chain fee; the Tron adapter does not yet.
+const quoteDepositFee = jest.fn()
+
 jest.unstable_mockModule('@rhino.fi/sdk', () => ({ RhinoSdk }))
-jest.unstable_mockModule('@rhino.fi/sdk/adapters/evm-wdk', () => ({ getEvmChainAdapterFromWdkAccount: jest.fn(() => ({ networkId: '42161' })) }))
-jest.unstable_mockModule('@rhino.fi/sdk/adapters/solana-wdk', () => ({ getSolanaChainAdapterFromWdkAccount: jest.fn(() => ({ networkId: '900' })) }))
+jest.unstable_mockModule('@rhino.fi/sdk/adapters/evm-wdk', () => ({ getEvmChainAdapterFromWdkAccount: jest.fn(() => ({ networkId: '42161', quoteDepositFee })) }))
+jest.unstable_mockModule('@rhino.fi/sdk/adapters/solana-wdk', () => ({ getSolanaChainAdapterFromWdkAccount: jest.fn(() => ({ networkId: '900', quoteDepositFee })) }))
 jest.unstable_mockModule('@rhino.fi/sdk/adapters/tron-wdk', () => ({ getTronChainAdapterFromWdkAccount: jest.fn(() => ({ networkId: '728126428' })) }))
 
 const indexModule = await import('../index.js')
@@ -182,6 +194,15 @@ const evmAccount = (chainId = 42161, getNetwork = jest.fn(async () => ({ chainId
 // full-account gate.
 const readOnlyAccount = () =>
   Object.assign(Object.create(WalletAccountReadOnlyEvm.prototype), {
+    getAddress: jest.fn(async () => DUMMY_DEPOSITOR)
+  })
+
+// A read-only ERC-4337 account on Arbitrum (quoting needs no signer). Its EIP-1193
+// provider reports the chain id; `config` is the wallet config the WDK keeps on it.
+const erc4337Account = (config = {}) =>
+  Object.assign(Object.create(WalletAccountReadOnlyEvmErc4337.prototype), {
+    _config: config,
+    _provider: { request: jest.fn(async () => '0xa4b1') },
     getAddress: jest.fn(async () => DUMMY_DEPOSITOR)
   })
 
@@ -243,6 +264,7 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
     bridgeApi.getBridgeConfig.mockResolvedValue({ data: DUMMY_CONFIG })
     bridgeApi.getSwapTokensConfig.mockResolvedValue({ data: [] })
     bridgeApi.getSwapUserQuote.mockResolvedValue({ data: DUMMY_USER_QUOTE })
+    quoteDepositFee.mockResolvedValue(DUMMY_SOURCE_FEE_QUOTE)
     noApprovalPrep()
   })
 
@@ -266,6 +288,8 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
   })
 
   describe('quoteSwidge', () => {
+    const QUOTE_OPTIONS = { fromToken: 'USDT', toToken: 'USDC', toChain: 'BASE', fromTokenAmount: 1000000n }
+
     it('should successfully quote a swidge operation (exact-in)', async () => {
       const protocol = makeProtocol()
 
@@ -286,12 +310,18 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
         depositor: DUMMY_DEPOSITOR,
         recipient: DUMMY_DEPOSITOR
       })
+      // The source-chain gas is simulated through the account for the exact deposit quoted.
+      expect(quoteDepositFee).toHaveBeenCalledWith({
+        tokenConfig: DUMMY_CONFIG.ARBITRUM.tokens.USDT,
+        depositAmount: 1000000n,
+        commitmentId: DUMMY_QUOTE_ID
+      })
       expect(quote).toEqual({
         fromTokenAmount: 1000000n,
         toTokenAmount: 990000n,
         toTokenAmountMin: 980000n,
         estimatedDuration: 60,
-        fees: DUMMY_QUOTE_FEES,
+        fees: [...DUMMY_QUOTE_FEES, DUMMY_SOURCE_NETWORK_FEE],
         quote: DUMMY_USER_QUOTE
       })
     })
@@ -336,8 +366,106 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(quote.fees).toEqual([
         { type: 'network', amount: 1000n, token: 'USDT', chain: 'ARBITRUM', included: true, description: 'Source-chain swap gas fee' },
         { type: 'network', amount: 5000n, token: 'USDT', chain: 'BASE', included: true, description: 'Destination-chain gas fee' },
-        { type: 'protocol', amount: 5000n, token: 'USDT', included: true, description: 'rhino.fi protocol fee' }
+        { type: 'protocol', amount: 5000n, token: 'USDT', included: true, description: 'rhino.fi protocol fee' },
+        DUMMY_SOURCE_NETWORK_FEE
       ])
+    })
+
+    it('should label the source-chain gas as covering the token approval when the allowance is short', async () => {
+      quoteDepositFee.mockResolvedValue({ fee: 300000n, includesApproval: true })
+      const protocol = makeProtocol()
+
+      const quote = await protocol.quoteSwidge(QUOTE_OPTIONS)
+
+      expect(quote.fees).toContainEqual({
+        type: 'network', amount: 300000n, token: 'ETH', chain: 'ARBITRUM', included: false, description: 'Source-chain gas for the token approval and deposit'
+      })
+    })
+
+    it('should omit the source-chain gas when the wallet pays none (sponsored ERC-4337 account)', async () => {
+      quoteDepositFee.mockResolvedValue({ fee: 0n, includesApproval: false })
+      const protocol = makeProtocol({}, erc4337Account({ isSponsored: true, paymasterUrl: 'https://dummy-paymaster.url/' }))
+
+      const quote = await protocol.quoteSwidge(QUOTE_OPTIONS)
+
+      expect(quote.fees).toEqual(DUMMY_QUOTE_FEES)
+    })
+
+    it('should denominate the source-chain gas in the paymaster token of an ERC-4337 account', async () => {
+      const protocol = makeProtocol({}, erc4337Account({
+        paymasterUrl: 'https://dummy-paymaster.url/',
+        paymasterAddress: '0x0000000000000000000000000000000000000001',
+        paymasterToken: { address: DUMMY_USDT_ARBITRUM_ADDRESS.toLowerCase() }
+      }))
+
+      const quote = await protocol.quoteSwidge(QUOTE_OPTIONS)
+
+      expect(quote.fees).toContainEqual({ ...DUMMY_SOURCE_NETWORK_FEE, token: 'USDT' })
+    })
+
+    it('should name a paymaster token unknown to the rhino.fi config by its address', async () => {
+      const unknownToken = '0x000000000000000000000000000000000000dEaD'
+      const protocol = makeProtocol({}, erc4337Account({
+        paymasterUrl: 'https://dummy-paymaster.url/',
+        paymasterAddress: '0x0000000000000000000000000000000000000001',
+        paymasterToken: { address: unknownToken }
+      }))
+
+      const quote = await protocol.quoteSwidge(QUOTE_OPTIONS)
+
+      expect(quote.fees).toContainEqual({ ...DUMMY_SOURCE_NETWORK_FEE, token: unknownToken })
+    })
+
+    it('should denominate the source-chain gas in the native token for an ERC-4337 account paying in native coins', async () => {
+      const protocol = makeProtocol({}, erc4337Account({ useNativeCoins: true }))
+
+      const quote = await protocol.quoteSwidge(QUOTE_OPTIONS)
+
+      expect(quote.fees).toContainEqual(DUMMY_SOURCE_NETWORK_FEE)
+    })
+
+    it('should quote the solana source-chain gas in SOL', async () => {
+      const protocol = makeProtocol({}, solanaAccount())
+
+      const quote = await protocol.quoteSwidge({ ...QUOTE_OPTIONS, recipient: DUMMY_RECIPIENT })
+
+      expect(quoteDepositFee).toHaveBeenCalledWith({
+        tokenConfig: DUMMY_CONFIG.SOLANA.tokens.USDT,
+        depositAmount: 1000000n,
+        commitmentId: DUMMY_QUOTE_ID
+      })
+      expect(quote.fees).toContainEqual({ ...DUMMY_SOURCE_NETWORK_FEE, token: 'SOL', chain: 'SOLANA' })
+    })
+
+    it('should not quote the source-chain gas when the chain adapter cannot (tron)', async () => {
+      const protocol = makeProtocol({}, tronAccount())
+
+      const quote = await protocol.quoteSwidge({ ...QUOTE_OPTIONS, recipient: DUMMY_RECIPIENT })
+
+      expect(quoteDepositFee).not.toHaveBeenCalled()
+      expect(quote.fees).toEqual(DUMMY_QUOTE_FEES)
+    })
+
+    it('should not quote the source-chain gas for a same-chain atomic swap', async () => {
+      bridgeApi.getSwapUserQuote.mockResolvedValue({ data: { ...DUMMY_USER_QUOTE, chainOut: 'ARBITRUM', isAtomicSwap: true } })
+      const protocol = makeProtocol()
+
+      const quote = await protocol.quoteSwidge({ ...QUOTE_OPTIONS, toChain: 'ARBITRUM' })
+
+      expect(quoteDepositFee).not.toHaveBeenCalled()
+      expect(quote.fees.every((fee) => fee.included)).toBe(true)
+    })
+
+    it('should surface a failed source-chain gas quote with the SourceFeeQuoteFailed code', async () => {
+      quoteDepositFee.mockRejectedValue(new Error('execution reverted'))
+      const protocol = makeProtocol()
+
+      const error = await protocol.quoteSwidge(QUOTE_OPTIONS).catch((caught) => caught)
+
+      expect(error).toBeInstanceOf(SwidgeExecutionError)
+      expect(error.code).toBe('SourceFeeQuoteFailed')
+      expect(error.message).toBe('Failed to quote the source-chain network fee. (execution reverted).')
+      expect(error.cause.message).toBe('execution reverted')
     })
 
     it('should successfully quote a swidge operation (exact-out)', async () => {
@@ -515,7 +643,7 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(result).toEqual({
         id: DUMMY_QUOTE_ID,
         hash: DUMMY_DEPOSIT_HASH,
-        fees: DUMMY_QUOTE_FEES,
+        fees: [...DUMMY_QUOTE_FEES, DUMMY_SOURCE_NETWORK_FEE],
         transactions: [
           { hash: DUMMY_DEPOSIT_HASH, chain: 'ARBITRUM', type: 'source' }
         ],
@@ -523,6 +651,88 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
         toTokenAmount: 990000n,
         toTokenAmountMin: 980000n
       })
+    })
+
+    it('should fail before sending anything when the source-chain fee cannot be quoted', async () => {
+      quoteDepositFee.mockRejectedValue(new Error('execution reverted'))
+      const bridge = jest.fn()
+      prepareBridge.mockResolvedValue({ type: 'no-approval-needed', quote: DUMMY_USER_QUOTE, bridge })
+      const protocol = makeProtocol()
+
+      const error = await protocol.swidge(SWIDGE_OPTIONS).catch((caught) => caught)
+
+      expect(error).toBeInstanceOf(SwidgeExecutionError)
+      expect(error.code).toBe('SourceFeeQuoteFailed')
+      expect(bridge).not.toHaveBeenCalled()
+    })
+
+    // Emits a pre-inclusion 'deposit-submitted' status ahead of the settled deposit hash, the way
+    // the SDK's WDK EVM adapter does for an ERC-4337 account.
+    const userOpSubmittedPrep = () =>
+      prepareBridge.mockImplementation(async (_bridgeData, options) => ({
+        type: 'no-approval-needed',
+        quote: { ...DUMMY_QUOTE, quoteId: DUMMY_QUOTE_ID },
+        bridge: async () => {
+          options.hooks.onBridgeStatusChange({
+            status: 'deposit-submitted',
+            submission: { type: 'user-operation', userOpHash: DUMMY_USER_OP_HASH }
+          })
+          options.hooks.onBridgeStatusChange({
+            status: 'waiting-for-deposit-tx-completion',
+            depositTxHash: DUMMY_DEPOSIT_HASH
+          })
+          return { data: { depositTxHash: DUMMY_DEPOSIT_HASH, withdrawTxHash: DUMMY_WITHDRAW_HASH } }
+        }
+      }))
+
+    it('should report a pre-inclusion submission without resolving it as the deposit', async () => {
+      userOpSubmittedPrep()
+      const protocol = makeProtocol()
+      const onDepositSubmitted = jest.fn()
+
+      const result = await protocol.swidge(SWIDGE_OPTIONS, { onDepositSubmitted })
+
+      expect(onDepositSubmitted).toHaveBeenCalledTimes(1)
+      expect(onDepositSubmitted).toHaveBeenCalledWith({
+        type: 'user-operation',
+        userOpHash: DUMMY_USER_OP_HASH
+      })
+      // The user-op hash must never stand in for the settled transaction hash.
+      expect(result.hash).toBe(DUMMY_DEPOSIT_HASH)
+      expect(result.transactions).toEqual([
+        { hash: DUMMY_DEPOSIT_HASH, chain: 'ARBITRUM', type: 'source' }
+      ])
+    })
+
+    it('should not abort the swidge when the submission hook throws', async () => {
+      userOpSubmittedPrep()
+      const protocol = makeProtocol()
+
+      const result = await protocol.swidge(SWIDGE_OPTIONS, {
+        onDepositSubmitted: () => { throw new Error('hook blew up') }
+      })
+
+      expect(result.hash).toBe(DUMMY_DEPOSIT_HASH)
+    })
+
+    it('should not abort the swidge, nor reject unhandled, when the submission hook rejects', async () => {
+      userOpSubmittedPrep()
+      const protocol = makeProtocol()
+      const unhandled = jest.fn()
+      process.on('unhandledRejection', unhandled)
+
+      try {
+        const result = await protocol.swidge(SWIDGE_OPTIONS, {
+          // The hook is typed `=> void`, which also accepts an async function.
+          onDepositSubmitted: async () => { throw new Error('hook blew up') }
+        })
+
+        expect(result.hash).toBe(DUMMY_DEPOSIT_HASH)
+        await new Promise((resolve) => setImmediate(resolve))
+        expect(unhandled).not.toHaveBeenCalled()
+      } finally {
+        process.off('unhandledRejection', unhandled)
+      }
     })
 
     it('should reuse a provided quote (from quoteSwidge) instead of re-fetching', async () => {
@@ -592,7 +802,7 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(result).toEqual({
         id: DUMMY_QUOTE_ID,
         hash: DUMMY_DEPOSIT_HASH,
-        fees: DUMMY_QUOTE_FEES,
+        fees: [...DUMMY_QUOTE_FEES, DUMMY_SOURCE_NETWORK_FEE],
         transactions: [
           { hash: DUMMY_APPROVAL_HASH, chain: 'ARBITRUM', type: 'approval' },
           { hash: DUMMY_DEPOSIT_HASH, chain: 'ARBITRUM', type: 'source' }
@@ -652,6 +862,59 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(error.message).toBe('rhino.fi failed to prepare the swidge. (available balance is 5).')
     })
 
+    it('should classify a deposit failure after a mined approval and carry the approval hash', async () => {
+      const depositError = new Error('deposit reverted')
+      const approve = jest.fn(async () => ({
+        type: 'success',
+        approvalTxHash: DUMMY_APPROVAL_HASH,
+        bridge: async () => ({
+          error: {
+            type: 'DepositFailed',
+            originalError: depositError,
+            approvalTxHash: DUMMY_APPROVAL_HASH
+          }
+        })
+      }))
+      prepareBridge.mockResolvedValue({
+        type: 'approval-needed',
+        quote: { ...DUMMY_QUOTE, quoteId: DUMMY_QUOTE_ID },
+        approve
+      })
+      const protocol = makeProtocol()
+
+      const error = await protocol.swidge(SWIDGE_OPTIONS).catch((e) => e)
+      expect(error).toBeInstanceOf(SwidgeExecutionError)
+      expect(error.code).toBe('DepositFailed')
+      expect(error.approvalTxHash).toBe(DUMMY_APPROVAL_HASH)
+      expect(error.message).toBe(
+        `rhino.fi did not submit a deposit for the swidge. (deposit reverted; approval transaction ${DUMMY_APPROVAL_HASH} was already broadcast and its network fee may have been charged).`
+      )
+      // The real underlying Error is chained, not the SDK's plain wrapper object.
+      expect(error.cause).toBe(depositError)
+    })
+
+    it('should carry the broadcast approval hash on an approval failure after broadcast', async () => {
+      const approve = jest.fn(async () => ({
+        type: 'error',
+        error: {
+          type: 'TokenApprovalFailed',
+          originalError: new Error('confirmation timed out'),
+          approvalTxHash: DUMMY_APPROVAL_HASH
+        }
+      }))
+      prepareBridge.mockResolvedValue({
+        type: 'approval-needed',
+        quote: { ...DUMMY_QUOTE, quoteId: DUMMY_QUOTE_ID },
+        approve
+      })
+      const protocol = makeProtocol()
+
+      const error = await protocol.swidge(SWIDGE_OPTIONS).catch((e) => e)
+      expect(error).toBeInstanceOf(SwidgeExecutionError)
+      expect(error.approvalTxHash).toBe(DUMMY_APPROVAL_HASH)
+      expect(error.message.match(/approval transaction/g)).toHaveLength(1)
+    })
+
     it('should throw if the swidge fees exceed the max network fee configuration', async () => {
       const protocol = makeProtocol({ maxNetworkFeeBps: 10 })
 
@@ -674,6 +937,14 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(error.feeType).toBe('protocol')
       expect(error.actualBps).toBe(50n)
       expect(error.maxBps).toBe(10n)
+    })
+
+    it('should not count the wallet-paid source-chain gas towards the max network fee', async () => {
+      // 0.5 ETH of gas: enormous next to the input, but in another token and not deducted from it.
+      quoteDepositFee.mockResolvedValue({ fee: 500_000_000_000_000_000n, includesApproval: true })
+      const protocol = makeProtocol({ maxNetworkFeeBps: 100 })
+
+      await expect(protocol.swidge(SWIDGE_OPTIONS)).resolves.toMatchObject({ id: DUMMY_QUOTE_ID })
     })
 
     it('should respect per-call config overriding constructor config', async () => {
@@ -846,7 +1117,8 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       const error = await protocol.getSwidgeStatus(DUMMY_QUOTE_ID).catch((e) => e)
       expect(error).toBeInstanceOf(SwidgeExecutionError)
       expect(error).not.toBeInstanceOf(UnknownOperationError)
-      expect(error.message).toBe('Failed to fetch the swidge status.')
+      // The underlying transport failure is surfaced in the message, not swallowed.
+      expect(error.message).toBe('Failed to fetch the swidge status. (ECONNRESET).')
     })
 
     it('should throw if the id is empty', async () => {
@@ -930,7 +1202,8 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(result.hash).toBe(DUMMY_QUOTE_ID)
       expect(result.tokenInAmount).toBe(1000000n)
       expect(result.tokenOutAmount).toBe(990000n)
-      expect(result.fee).toBe(10000n) // network 5000 + protocol 5000
+      // network 5000 + protocol 5000 in USDT; the wallet-paid ETH source-chain gas is not summed in.
+      expect(result.fee).toBe(10000n)
     })
 
     it('should delegate bridge() to swidge() with the derived source chain', async () => {
@@ -947,8 +1220,19 @@ describe('@rhino.fi/wdk-protocol-swidge-rhinofi', () => {
       expect(bridgeData.type).toBe('bridge')
       expect(bridgeData.chainIn).toBe('ARBITRUM')
       expect(result.hash).toBe(DUMMY_QUOTE_ID)
-      expect(result.fee).toBe(5000n) // network
+      expect(result.fee).toBe(5000n) // network, in USDT; the ETH source-chain gas is not summed in
       expect(result.bridgeFee).toBe(5000n) // protocol
+    })
+
+    it('should delegate quoteSwap() and quoteBridge() to quoteSwidge() without summing the source-chain gas in', async () => {
+      const protocol = makeProtocol()
+
+      const swapQuote = await protocol.quoteSwap({ tokenIn: 'USDT', tokenOut: 'USDC', tokenInAmount: 1000000n })
+      const bridgeQuote = await protocol.quoteBridge({ token: 'USDC', targetChain: 'BASE', amount: 1000000n })
+
+      expect(swapQuote).toEqual({ fee: 10000n, tokenInAmount: 1000000n, tokenOutAmount: 990000n })
+      expect(bridgeQuote).toEqual({ fee: 5000n, bridgeFee: 5000n })
+      expect(quoteDepositFee).toHaveBeenCalledTimes(2)
     })
 
     it('should throw from swap() when the source chain cannot be derived (no provider)', async () => {

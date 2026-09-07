@@ -36,6 +36,8 @@ const options = {
   fromTokenAmount: 1_000_000n // exact-in; use `toTokenAmount` for exact-out
 }
 const quote = await rhinofi.quoteSwidge(options)
+// quote.fees itemises the rhino.fi fees (deducted from the amounts) and the
+// source-chain gas the wallet pays on top of them (`included: false`).
 
 // Execute. Pass `quote.quote` to bridge against the exact quote shown to the
 // user instead of re-fetching — so the amounts can't move in between. Omit it to
@@ -85,7 +87,7 @@ provides an on-chain adapter:
 | Ecosystem | As source | Notes |
 | --- | --- | --- |
 | EVM | ✅ Supported | `@tetherto/wdk-wallet-evm` (incl. ERC-4337); signs via `account.sendTransaction` |
-| Tron | ✅ Supported | `@tetherto/wdk-wallet-tron`; signs the TRC-20 approval + deposit via `account.sendTransaction` |
+| Tron | ✅ Supported | `@tetherto/wdk-wallet-tron`; signs the TRC-20 approval + deposit via `account.sendTransaction`|
 | Solana | ✅ Supported | `@tetherto/wdk-wallet-solana`; signs the deposit via `account.sendTransaction` (no approval step) |
 | TON | 🔜 Planned |  |
 
@@ -109,9 +111,14 @@ rhino.fi bridge states are mapped to the canonical `SwidgeStatus`:
 | --- | --- | --- |
 | `gasFee` + `sourceGasFee` | `network` | `fee` |
 | `fee` − network (i.e. `platformFee` + `percentageFee`) | `protocol` | `bridgeFee` |
+| wallet gas for the approval + deposit, simulated through the account | `network` (`included: false`) | — |
 
-Fees are itemised in `SwidgeFee[]` and denominated in the input token. The
-`network` and `protocol` amounts are disjoint and sum to the quote's total `fee`.
+Fees are itemised in `SwidgeFee[]`. rhino.fi's fees are denominated in the
+input token and deducted from the quoted amounts (`included: true`); their
+`network` and `protocol` amounts are disjoint and sum to the quote's total
+`fee`. The wallet-paid source-chain gas is denominated in the token the wallet
+pays gas in (the chain's native token, or an ERC-4337 paymaster token) and is
+paid on top of the input amount (`included: false`).
 
 ## Errors
 
@@ -123,7 +130,7 @@ All errors extend `RhinofiProtocolError`:
 - `UnsupportedChainError` / `UnsupportedTokenError` — unknown chain/token, or an unsupported source ecosystem.
 - `FeeLimitExceededError` — quoted fees exceed `maxNetworkFeeBps` / `maxProtocolFeeBps`.
 - `UnknownOperationError` — `getSwidgeStatus()` called with an unknown id.
-- `SwidgeExecutionError` — the underlying rhino.fi quote/execution failed. Carries a `.code` (e.g. `InsufficientBalance`, `NegativeReceiveAmount`, `TokenApprovalFailed`) for programmatic handling, and the SDK error as `.cause`.
+- `SwidgeExecutionError` — the underlying rhino.fi quote/execution failed. Carries a `.code` (e.g. `InsufficientBalance`, `NegativeReceiveAmount`, `TokenApprovalFailed`, `SourceFeeQuoteFailed`) for programmatic handling, and the SDK error as `.cause`.
 
 ## API Reference
 
@@ -135,11 +142,13 @@ All errors extend `RhinofiProtocolError`:
 - `getSwidgeStatus(id, options?)` — current status of an operation.
 - `getSupportedChains()` / `getSupportedTokens(options?)` — discovery.
 
-Inherited legacy delegations `swap` / `quoteSwap` / `bridge` / `quoteBridge`
-map onto `swidge` / `quoteSwidge`. Their option shapes carry no source chain, so
-it must be derivable from the account (an EVM account connected to a provider,
-a Tron account connected to a `TronWeb` client, or a Solana account connected
-to an RPC provider); otherwise they throw `RhinofiProtocolError`.
+Legacy delegations `swap` / `quoteSwap` / `bridge` / `quoteBridge` map onto
+`swidge` / `quoteSwidge`. Their `fee` (and `bridgeFee`) sum the rhino.fi fees
+only, in the input token; the wallet-paid source-chain gas is in another token
+and is not summed in. Their option shapes carry no source chain, so it must be
+derivable from the account (an EVM account connected to a provider, a Tron
+account connected to a `TronWeb` client, or a Solana account connected to an
+RPC provider); otherwise they throw `RhinofiProtocolError`.
 
 ## Examples
 

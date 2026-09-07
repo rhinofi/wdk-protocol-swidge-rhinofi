@@ -130,10 +130,12 @@ export class SwidgeExecutionError extends RhinofiProtocolError {
      * @param {Object} [details] - Optional error details.
      * @param {unknown} [details.cause] - The error's cause.
      * @param {string} [details.code] - The rhino.fi failure code.
+     * @param {string} [details.approvalTxHash] - The broadcast approval transaction's hash.
      */
     constructor(message: string, details?: {
         cause?: unknown;
         code?: string;
+        approvalTxHash?: string;
     });
     /**
      * The rhino.fi failure type (e.g. 'InsufficientBalance'), when known.
@@ -141,4 +143,11 @@ export class SwidgeExecutionError extends RhinofiProtocolError {
      * @type {string | undefined}
      */
     code: string | undefined;
+    /**
+     * The broadcast approval transaction's hash, present when the failure happened after an
+     * approval left the device — its network fee may have been charged despite the failure.
+     *
+     * @type {string | undefined}
+     */
+    approvalTxHash: string | undefined;
 }
