@@ -3,7 +3,7 @@
 A [Tether WDK](https://docs.wdk.tether.io) `SwidgeProtocol` module that performs
 cross-chain swaps and bridges through the [rhino.fi](https://rhino.fi) protocol.
 
-[![Powered by WDK](https://img.shields.io/badge/Powered%20by-WDK-5A4FFF)](https://docs.wdk.tether.io)
+[![Built with WDK](./assets/built-with-wdk.png)](https://docs.wdk.tether.io)
 
 ## Installation
 

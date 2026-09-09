@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1
+
+### Patch Changes
+
+- 3ec8703: Add the official "Built with WDK" badge to the README, and pin patched `axios`, `ws`, `uuid` and the vulnerable packages in hardhat's dev tree (`adm-zip`, `cookie`, `serialize-javascript`, `tmp`, `undici`) through npm `overrides`
+- Updated dependencies [3ec8703]
+  - @rhino.fi/sdk@3.3.0
+
 ## 1.3.0
 
 ### Minor Changes
