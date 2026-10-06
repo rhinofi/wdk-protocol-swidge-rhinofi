@@ -1,8 +1,10 @@
 /** @type {import('hardhat/config').HardhatUserConfig} */
-module.exports = {
+export default {
   solidity: '0.8.24',
   networks: {
     hardhat: {
+      type: 'edr-simulated',
+      chainType: 'l1',
       chainId: 42161,
       accounts: {
         mnemonic: 'test test test test test test test test test test test junk',
