@@ -11,14 +11,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const RPC_PORT = 18545
 const RPC_URL = `http://127.0.0.1:${RPC_PORT}`
 const TEST_MNEMONIC = 'test test test test test test test test test test test junk'
-const HARDHAT_CHAIN_ID = 42161 // Arbitrum, per hardhat.config.cjs
+const HARDHAT_CHAIN_ID = 42161 // Arbitrum, per hardhat.config.js
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -92,12 +91,11 @@ const waitForRpc = async (timeoutMs = 60000) => {
 }
 
 beforeAll(async () => {
-  // Resolve the hardhat CLI entry instead of relying on node_modules/.bin so
+  // Use the local launcher instead of relying on node_modules/.bin so
   // the spawn works under both npm and Yarn PnP installs. Under PnP the child
   // node process needs the PnP runtime preloaded to resolve hardhat's deps;
   // the loader is found by walking up from the package root (absent under npm).
-  const require = createRequire(import.meta.url)
-  const hardhatCli = require.resolve('hardhat/internal/cli/cli.js')
+  const hardhatCli = join(ROOT, 'scripts/hardhat.mjs')
   const env = { ...process.env }
   for (let dir = ROOT, parent = null; parent !== dir; parent = dir, dir = dirname(dir)) {
     const pnpLoader = join(dir, '.pnp.cjs')
@@ -108,11 +106,25 @@ beforeAll(async () => {
   }
   nodeProcess = spawn(
     process.execPath,
-    [hardhatCli, 'node', '--hostname', '127.0.0.1', '--port', String(RPC_PORT)],
+    [hardhatCli, '--network', 'hardhat', 'node', '--hostname', '127.0.0.1', '--port', String(RPC_PORT)],
     { cwd: ROOT, stdio: 'ignore', env }
   )
   const chainId = await waitForRpc()
   expect(chainId).toBe(HARDHAT_CHAIN_ID)
+  // Fee quotes now query ERC20 allowance. Install a local constant-return
+  // fixture at the token address; no contract is deployed or transaction sent.
+  const allowanceFixture = `0x7f${'ff'.repeat(32)}60005260206000f3`
+  const response = await fetch(RPC_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'hardhat_setCode',
+      params: [DUMMY_CONFIG.ARBITRUM.tokens.DAI.address, allowanceFixture]
+    })
+  })
+  expect(await response.json()).not.toHaveProperty('error')
 }, 90000)
 
 afterAll(() => {
@@ -138,6 +150,7 @@ describe('integration: real account against a live node', () => {
   it('derives the source chain from the account live provider', async () => {
     bridgeApi.getSwapUserQuote.mockResolvedValue({
       data: {
+        quoteId: '0123456789abcdef0123456789abcdef',
         chainIn: 'ARBITRUM',
         chainOut: 'BASE',
         payAmount: '1',
@@ -163,6 +176,7 @@ describe('integration: real account against a live node', () => {
   it('preserves 18-decimal precision through the public quote', async () => {
     bridgeApi.getSwapUserQuote.mockResolvedValue({
       data: {
+        quoteId: '0123456789abcdef0123456789abcdef',
         chainIn: 'ARBITRUM',
         chainOut: 'BASE',
         payAmount: '1234.123456789012345678',

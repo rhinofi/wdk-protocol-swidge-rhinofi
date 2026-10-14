@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.0
+
+### Minor Changes
+
+- 87d9e5d: `quoteSwidge()` and `swidge()` now also quote the source-chain network fee the wallet pays to make the deposit (and the token approval, when the allowance is short), simulated through the account. It is reported as a `network` fee on the source chain with `included: false`, in the token the wallet pays gas in, the chain's native token, or an ERC-4337 paymaster token.
+
+### Patch Changes
+
+- fb7dbb0: Improved error handling for the WDK module, bundle approval + submit for erc4337 accounts
+- Updated dependencies [fb7dbb0]
+- Updated dependencies [ba55886]
+- Updated dependencies [87d9e5d]
+  - @rhino.fi/sdk@3.4.0
+
 ## 1.3.1
 
 ### Patch Changes
