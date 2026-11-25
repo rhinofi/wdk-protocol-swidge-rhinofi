@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.1
+
+### Patch Changes
+
+- Updated dependencies [727e40c]
+- Updated dependencies [9d65d59]
+  - @rhino.fi/sdk@3.4.1
+
 ## 1.4.0
 
 ### Minor Changes

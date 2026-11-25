@@ -1,6 +1,6 @@
 {
   "name": "@rhino.fi/wdk-protocol-swidge-rhinofi",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "WDK module to perform cross-chain swaps via the Rhino.fi protocol.",
   "keywords": [
     "wdk",
@@ -43,7 +43,7 @@
     "test:integration": "node --experimental-vm-modules scripts/run-integration-tests.mjs"
   },
   "dependencies": {
-    "@rhino.fi/sdk": "3.4.0",
+    "@rhino.fi/sdk": "3.4.1",
     "@tetherto/wdk-wallet": "1.0.0-beta.17",
     "@tetherto/wdk-wallet-evm": "1.0.0-beta.17",
     "@tetherto/wdk-wallet-evm-erc-4337": "1.0.0-beta.16",
